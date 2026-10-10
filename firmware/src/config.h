@@ -11,15 +11,24 @@ struct PanelConfig {
   bool startLeft = true;   // chain input panel is in the left column
   bool serpentine = true;  // odd rows are mounted upside down (S-shaped chain)
   uint8_t rotation = 0;    // 0..3, quarter turns clockwise
+  bool flipH = false;      // mirror left/right (after rotation)
+  bool flipV = false;      // mirror top/bottom (after rotation)
   uint8_t driver = 0;      // HUB75_I2S_CFG::shift_driver
   bool clkphase = false;
 
   bool operator==(const PanelConfig &o) const {
     return panelW == o.panelW && panelH == o.panelH && cols == o.cols && rows == o.rows &&
            startTop == o.startTop && startLeft == o.startLeft && serpentine == o.serpentine &&
-           rotation == o.rotation && driver == o.driver && clkphase == o.clkphase;
+           rotation == o.rotation && flipH == o.flipH && flipV == o.flipV && driver == o.driver &&
+           clkphase == o.clkphase;
   }
   bool operator!=(const PanelConfig &o) const { return !(*this == o); }
+  // Changes limited to orientation that keep the canvas size can be applied live.
+  bool sameHardware(const PanelConfig &o) const {
+    return panelW == o.panelW && panelH == o.panelH && cols == o.cols && rows == o.rows &&
+           startTop == o.startTop && startLeft == o.startLeft && serpentine == o.serpentine &&
+           driver == o.driver && clkphase == o.clkphase && (rotation & 1) == (o.rotation & 1);
+  }
 };
 
 enum PowerProfile : uint8_t { POWER_BATTERY = 0, POWER_AC = 1 };

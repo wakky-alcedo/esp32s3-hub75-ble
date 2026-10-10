@@ -50,6 +50,7 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
     bool restart = false;
     gConfig.fromJson(req["config"], restart);
     gDisplay.setBrightness(gConfig.brightness);
+    if (!restart) gDisplay.applyOrientation(gConfig.panel);
     gConfig.save();
     resp["reboot"] = restart;
     if (restart) gRebootRequested = true;

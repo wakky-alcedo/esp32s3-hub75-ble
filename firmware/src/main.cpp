@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include "ble.h"
 #include "button.h"
 #include "commands.h"
 #include "config.h"
@@ -41,6 +42,8 @@ static void pollSerial() {
 static void handleButton() {
   ButtonEvent ev = sButton.poll();
   if (ev == BTN_NONE) return;
+  JsonDocument evt;
+  evt["evt"] = "status";
   StateLock lock;
   switch (ev) {
     case BTN_SHORT:
@@ -78,6 +81,9 @@ static void handleButton() {
     default:
       break;
   }
+  // Keep the app's controls in sync with changes made on the device.
+  gPlayer.statusJson(evt["status"].to<JsonObject>());
+  bleNotifyEvent(evt);
 }
 
 void setup() {
@@ -103,6 +109,7 @@ void setup() {
   gDisplay.setBrightness(gConfig.brightness);
   sButton.begin(0);
   gPlayer.begin();
+  bleBegin(gConfig.name.c_str());
   Serial.println("[boot] ready");
 }
 

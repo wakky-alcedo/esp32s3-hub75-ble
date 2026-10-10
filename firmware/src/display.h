@@ -10,6 +10,8 @@ class MatrixPanel_I2S_DMA;
 class Display {
  public:
   bool begin(const PanelConfig &cfg);
+  // Rebuilds the pixel map for a new rotation/mirror with the same canvas size.
+  void applyOrientation(const PanelConfig &cfg);
   GFXcanvas16 &canvas() { return *canvas_; }
   int16_t width() const { return w_; }
   int16_t height() const { return h_; }

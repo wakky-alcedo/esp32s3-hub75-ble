@@ -49,9 +49,11 @@ bool Display::begin(const PanelConfig &cfg) {
 
 void Display::buildMap(const PanelConfig &cfg) {
   const int pw = cfg.panelW * cfg.cols, ph = cfg.panelH * cfg.rows;
-  map_ = (uint32_t *)ps_malloc(sizeof(uint32_t) * w_ * h_);
-  for (int vy = 0; vy < h_; vy++) {
-    for (int vx = 0; vx < w_; vx++) {
+  if (!map_) map_ = (uint32_t *)ps_malloc(sizeof(uint32_t) * w_ * h_);
+  for (int y = 0; y < h_; y++) {
+    for (int x = 0; x < w_; x++) {
+      int vx = cfg.flipH ? w_ - 1 - x : x;
+      int vy = cfg.flipV ? h_ - 1 - y : y;
       // Virtual -> physical wall coordinates.
       int px, py;
       switch (cfg.rotation) {
@@ -73,9 +75,13 @@ void Display::buildMap(const PanelConfig &cfg) {
         ly = cfg.panelH - 1 - ly;
       }
       int dx = idx * cfg.panelW + lx, dy = ly;
-      map_[vy * w_ + vx] = ((uint32_t)dx << 16) | dy;
+      map_[y * w_ + x] = ((uint32_t)dx << 16) | dy;
     }
   }
+}
+
+void Display::applyOrientation(const PanelConfig &cfg) {
+  if (map_) buildMap(cfg);
 }
 
 void Display::setBrightness(uint8_t b) {

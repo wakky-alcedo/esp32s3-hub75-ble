@@ -22,6 +22,8 @@ void Config::toJson(JsonObject o) const {
   p["startLeft"] = panel.startLeft;
   p["serpentine"] = panel.serpentine;
   p["rotation"] = panel.rotation;
+  p["flipH"] = panel.flipH;
+  p["flipV"] = panel.flipV;
   p["driver"] = panel.driver;
   p["clkphase"] = panel.clkphase;
   o["brightness"] = brightness;
@@ -58,6 +60,8 @@ void Config::fromJson(JsonObjectConst o, bool &needsRestart) {
     setIf(p, "startLeft", n.startLeft);
     setIf(p, "serpentine", n.serpentine);
     setIf(p, "rotation", n.rotation);
+    setIf(p, "flipH", n.flipH);
+    setIf(p, "flipV", n.flipV);
     setIf(p, "driver", n.driver);
     setIf(p, "clkphase", n.clkphase);
     n.panelW = constrain(n.panelW, 16, 128);
@@ -66,7 +70,7 @@ void Config::fromJson(JsonObjectConst o, bool &needsRestart) {
     n.rows = constrain(n.rows, 1, 6);
     if (n.cols * n.rows > 6) n.rows = 6 / n.cols;
     n.rotation &= 3;
-    if (n != panel) needsRestart = true;
+    if (!n.sameHardware(panel)) needsRestart = true;
     panel = n;
   }
   setIf(o, "brightness", brightness);
