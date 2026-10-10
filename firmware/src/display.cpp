@@ -80,6 +80,10 @@ void Display::buildMap(const PanelConfig &cfg) {
   }
 }
 
+void Display::end() {
+  if (dma_) dma_->stopDMAoutput();
+}
+
 void Display::applyOrientation(const PanelConfig &cfg) {
   if (map_) buildMap(cfg);
 }

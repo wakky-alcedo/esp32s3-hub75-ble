@@ -10,5 +10,7 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp);
 
 // Set by commands that need a reboot once the response has been sent.
 extern volatile bool gRebootRequested;
+// Reboot into the ROM download mode (used by the upload script).
+extern volatile bool gBootloaderRequested;
 // Hook for BLE bond clearing (set by the BLE module).
 extern void (*gClearBondsHook)();

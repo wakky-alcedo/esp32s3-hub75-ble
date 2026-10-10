@@ -12,6 +12,8 @@ class Display {
   bool begin(const PanelConfig &cfg);
   // Rebuilds the pixel map for a new rotation/mirror with the same canvas size.
   void applyOrientation(const PanelConfig &cfg);
+  // Stops the DMA output; call before a software reset.
+  void end();
   GFXcanvas16 &canvas() { return *canvas_; }
   int16_t width() const { return w_; }
   int16_t height() const { return h_; }

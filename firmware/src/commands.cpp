@@ -10,6 +10,7 @@
 #include "transfer.h"
 
 volatile bool gRebootRequested = false;
+volatile bool gBootloaderRequested = false;
 void (*gClearBondsHook)() = nullptr;
 
 static void fail(JsonDocument &resp, const char *err) {
@@ -142,6 +143,8 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
     if (gClearBondsHook) gClearBondsHook();
   } else if (!strcmp(cmd, "reboot")) {
     gRebootRequested = true;
+  } else if (!strcmp(cmd, "bootloader")) {
+    gBootloaderRequested = true;
   } else {
     fail(resp, "unknown cmd");
   }
