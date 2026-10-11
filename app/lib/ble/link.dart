@@ -38,11 +38,14 @@ class DeviceLink {
   Stream<Map<String, dynamic>> get events => _events.stream;
 
   Future<void> open() async {
+    debugPrint('[led] link: connecting');
     await UniversalBle.connect(deviceId, timeout: const Duration(seconds: 15));
+    debugPrint('[led] link: discovering');
     await UniversalBle.discoverServices(deviceId);
     if (Platform.isAndroid) {
       // Bond up front so the OS PIN dialog appears before the first command.
       final paired = await UniversalBle.isPaired(deviceId) ?? false;
+      debugPrint('[led] link: paired=$paired');
       if (!paired) await UniversalBle.pair(deviceId, timeout: const Duration(seconds: 60));
       try {
         await UniversalBle.requestConnectionPriority(deviceId, BleConnectionPriority.highPerformance);
@@ -54,6 +57,7 @@ class DeviceLink {
       // Windows negotiates on its own and does not report it here.
       mtu = Platform.isWindows ? 185 : 23;
     }
+    debugPrint('[led] link: mtu=$mtu, subscribing');
     _valueSub = UniversalBle.characteristicValueStream(deviceId, Uuids.notify).listen(_onNotify);
     await UniversalBle.subscribeNotifications(deviceId, Uuids.service, Uuids.notify);
   }

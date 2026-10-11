@@ -46,10 +46,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
+          // Not const: these read AppState directly and must rebuild on every notify.
           body: switch (tab) {
-            0 => app.connected ? const _ControlTab() : const _ConnectPanel(),
-            1 => const _PresetsTab(),
-            _ => app.connected ? const SettingsTab() : const _ConnectPanel(),
+            0 => app.connected ? _ControlTab() : _ConnectPanel(),
+            1 => _PresetsTab(),
+            _ => app.connected ? SettingsTab() : _ConnectPanel(),
           },
           bottomNavigationBar: NavigationBar(
             selectedIndex: tab,

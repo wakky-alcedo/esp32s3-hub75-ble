@@ -26,24 +26,44 @@ class AppState extends ChangeNotifier {
   StreamSubscription<BleDevice>? _scanSub;
   StreamSubscription<bool>? _connSub;
   StreamSubscription<Map<String, dynamic>>? _evtSub;
+  Timer? _scanTimer;
+  bool _autoTried = false;
 
   int get width => (info['width'] as int?) ?? 64;
   int get height => (info['height'] as int?) ?? 32;
   bool get connected => state == LinkState.connected;
 
   Future<void> startScan() async {
+    if (state != LinkState.idle) return;
     error = null;
     found.clear();
-    await UniversalBle.requestPermissions();
+    _autoTried = false;
     state = LinkState.scanning;
     notifyListeners();
+    _log('scan: requesting permissions');
+    try {
+      await UniversalBle.requestPermissions();
+      _log('scan: permissions ok');
+    } catch (e) {
+      error = 'Bluetoothの権限がありません: $e';
+      state = LinkState.idle;
+      notifyListeners();
+      return;
+    }
     _scanSub ??= UniversalBle.scanStream.listen((d) {
+      if (!found.containsKey(d.deviceId)) _log('scan: found ${d.deviceId} ${d.name}');
       found[d.deviceId] = d;
       notifyListeners();
       _maybeAutoConnect(d);
     });
     try {
       await UniversalBle.startScan(scanFilter: ScanFilter(withServices: [Uuids.service]));
+      _log('scan: started');
+      // Give up after a while so the UI offers a retry instead of spinning.
+      _scanTimer?.cancel();
+      _scanTimer = Timer(const Duration(seconds: 15), () {
+        if (state == LinkState.scanning) stopScan();
+      });
     } catch (e) {
       error = 'スキャンできません: $e';
       state = LinkState.idle;
@@ -52,6 +72,8 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> stopScan() async {
+    _log('scan: stop');
+    _scanTimer?.cancel();
     try {
       await UniversalBle.stopScan();
     } catch (_) {}
@@ -60,17 +82,23 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _maybeAutoConnect(BleDevice d) async {
-    if (state != LinkState.scanning) return;
+    if (state != LinkState.scanning || _autoTried) return;
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getString('lastDevice') == d.deviceId) await connect(d);
+    if (state != LinkState.scanning || _autoTried) return;
+    if (prefs.getString('lastDevice') == d.deviceId) {
+      _autoTried = true; // once per scan, so a failing device can't loop
+      await connect(d);
+    }
   }
 
   Future<void> connect(BleDevice d) async {
-    await stopScan();
+    if (state == LinkState.connecting || state == LinkState.connected) return;
     state = LinkState.connecting;
+    await stopScan();
     deviceName = d.name;
     error = null;
     notifyListeners();
+    _log('connect: ${d.deviceId}');
     final l = DeviceLink(d.deviceId);
     try {
       await l.open();
@@ -85,6 +113,7 @@ class AppState extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('lastDevice', d.deviceId);
     } catch (e) {
+      _log('connect failed: $e');
       error = '接続できません: $e';
       await l.close();
       link = null;
@@ -99,18 +128,25 @@ class AppState extends ChangeNotifier {
       await prefs.remove('lastDevice');
     }
     final l = link;
-    _onDisconnected();
+    _onDisconnected(expected: true);
     await l?.close();
   }
 
-  void _onDisconnected() {
+  void _onDisconnected({bool expected = false}) {
+    _log('disconnected (state=$state expected=$expected)');
+    // A failed connect() cleans up after itself.
+    if (state != LinkState.connected) return;
     _connSub?.cancel();
     _evtSub?.cancel();
     _connSub = null;
     _evtSub = null;
     link = null;
-    if (state == LinkState.connected) error = '切断されました';
     state = LinkState.idle;
+    if (!expected) {
+      error = '切断されました。再接続します';
+      // The device may be rebooting; look for it again (auto-connects once).
+      Future.delayed(const Duration(seconds: 2), startScan);
+    }
     notifyListeners();
   }
 
@@ -160,6 +196,7 @@ class AppState extends ChangeNotifier {
     if (r == null) return false;
     if (r['reboot'] == true) {
       await disconnect();
+      Future.delayed(const Duration(seconds: 3), startScan);
       return true;
     }
     config = Map<String, dynamic>.from((await link!.command('get_config'))['config'] as Map);
@@ -191,6 +228,8 @@ class AppState extends ChangeNotifier {
     }
     if (_latest.containsKey(cmd)) await _pump(cmd);
   }
+
+  void _log(String m) => debugPrint('[led] $m');
 
   void clearError() {
     error = null;

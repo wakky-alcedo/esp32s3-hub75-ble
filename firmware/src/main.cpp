@@ -13,10 +13,30 @@
 #include "fsutil.h"
 #include "player.h"
 #include "rtc.h"
+#include "trace.h"
 
 static const uint32_t FRAME_MS = 16;
 
 static Button sButton;
+
+RTC_NOINIT_ATTR volatile uint32_t gTraceMain;
+RTC_NOINIT_ATTR volatile uint32_t gTraceBle;
+
+// (Re)arms the RTC watchdog: after `ticks` of the ~150kHz RTC clock without
+// another call it resets the whole chip, like the RST button.
+static void rwdtArm(uint32_t ticks) {
+  wdt_hal_context_t rwdt;
+  wdt_hal_init(&rwdt, WDT_RWDT, 0, false);
+  wdt_hal_write_protect_disable(&rwdt);
+  wdt_hal_config_stage(&rwdt, WDT_STAGE0, ticks, WDT_STAGE_ACTION_RESET_RTC);
+  wdt_hal_enable(&rwdt);
+  wdt_hal_feed(&rwdt);
+  wdt_hal_write_protect_enable(&rwdt);
+}
+
+// The main loop feeds this; if it stalls for ~8s the chip resets cleanly and
+// the breadcrumbs above tell where it was stuck.
+static void loopWatchdogFeed() { rwdtArm(150000 * 8); }
 
 // esp_restart() only resets the CPUs. With the HUB75 GDMA and BLE both in use
 // the next boot then hangs (in NimBLE init or display init), so every reboot
@@ -37,13 +57,7 @@ static Button sButton;
     while (true) {
     }
   }
-  wdt_hal_context_t rwdt;
-  wdt_hal_init(&rwdt, WDT_RWDT, 0, false);
-  wdt_hal_write_protect_disable(&rwdt);
-  wdt_hal_config_stage(&rwdt, WDT_STAGE0, 2000,  // ~13ms on the 150kHz RTC clock
-                       WDT_STAGE_ACTION_RESET_RTC);
-  wdt_hal_enable(&rwdt);
-  wdt_hal_write_protect_enable(&rwdt);
+  rwdtArm(2000);  // ~13ms
   while (true) {
   }
 }
@@ -120,7 +134,41 @@ static void handleButton() {
   bleNotifyEvent(evt);
 }
 
+// Survives the RTC-WDT reset (not power-on), so the reason that triggered a
+// recovery reset can still be logged on the clean boot that follows.
+RTC_NOINIT_ATTR static uint32_t sRecoveredFrom;
+static const uint32_t RECOVERED_MAGIC = 0x52450000u;
+
+// Resets that do not restart the whole chip (panic, esp_restart, task/int
+// watchdogs). Booting on from one of these hangs, so turn it into a full reset.
+static bool partialReset(int r) {
+  switch (r) {
+    case 3:   // RTC_SW_SYS_RESET
+    case 7:   // TG0WDT_SYS_RESET
+    case 8:   // TG1WDT_SYS_RESET
+    case 9:   // RTCWDT_SYS_RESET
+    case 11:  // TG0WDT_CPU_RESET
+    case 12:  // RTC_SW_CPU_RESET
+    case 13:  // RTCWDT_CPU_RESET
+    case 17:  // TG1WDT_CPU_RESET
+    case 18:  // SUPER_WDT_RESET
+      return true;
+    default:
+      return false;
+  }
+}
+
 void setup() {
+  int resetReason = rtc_get_reset_reason(0);
+  if (partialReset(resetReason)) {
+    sRecoveredFrom = RECOVERED_MAGIC | resetReason;
+    fullReset(false);
+  }
+  const uint32_t prevMain = gTraceMain, prevBle = gTraceBle;
+  TRACE_MAIN(1);
+  TRACE_BLE(0);
+  rwdtArm(150000 * 15);  // setup itself must not hang either
+
   // A software reset (ESP.restart, esptool) leaves the HUB75 GDMA/LCD_CAM
   // transfer of the previous run going, which hangs BLE or display init.
   periph_module_reset(PERIPH_LCD_CAM_MODULE);
@@ -133,25 +181,35 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.printf("\n[boot] LED Display Controller %s\n", FW_VERSION);
-  Serial.printf("[boot] reset reason %d (cpu0 %d)\n", (int)esp_reset_reason(), (int)rtc_get_reset_reason(0));
+  Serial.printf("[boot] reset reason %d\n", resetReason);
+  if ((sRecoveredFrom & 0xFFFF0000u) == RECOVERED_MAGIC) {
+    Serial.printf("[boot] recovered from partial reset (reason %u)\n", sRecoveredFrom & 0xFFFF);
+  }
+  sRecoveredFrom = 0;
+  if (resetReason != 1) Serial.printf("[boot] last trace: main=%u ble=%u\n", prevMain, prevBle);
   Serial.printf("[boot] PSRAM %u bytes free, heap %u\n", ESP.getFreePsram(), ESP.getFreeHeap());
 
   StateLock::init();
+  TRACE_MAIN(2);
   if (!fsBegin()) Serial.println("[boot] LittleFS mount failed");
   else Serial.printf("[boot] LittleFS %u/%u bytes used\n", LittleFS.usedBytes(), LittleFS.totalBytes());
   if (!gConfig.load()) {
     Serial.println("[boot] no config, using defaults");
     gConfig.save();
   }
+  TRACE_MAIN(3);
   rtcBegin();
+  TRACE_MAIN(4);
   bleBegin(gConfig.name.c_str());
-
+  TRACE_MAIN(5);
   if (!gDisplay.begin(gConfig.panel)) {
     Serial.println("[boot] display init failed");
   }
   gDisplay.setBrightness(gConfig.brightness);
+  TRACE_MAIN(6);
   sButton.begin(0);
   gPlayer.begin();
+  TRACE_MAIN(7);
   Serial.println("[boot] ready");
 }
 
@@ -161,13 +219,19 @@ void loop() {
   uint32_t start = millis();
   uint32_t dt = start - last;
   last = start;
+  loopWatchdogFeed();
 
+  TRACE_MAIN(10);
   pollSerial();
+  TRACE_MAIN(11);
   handleButton();
   uint32_t t0 = micros();
+  TRACE_MAIN(12);
   {
     StateLock lock;
+    TRACE_MAIN(13);
     gPlayer.render(gDisplay.canvas(), dt);
+    TRACE_MAIN(14);
     gDisplay.present();
   }
   busyUs += micros() - t0;
@@ -175,9 +239,11 @@ void loop() {
 
   if (gRebootRequested || gBootloaderRequested) {
     delay(200);  // let the response go out
+    TRACE_MAIN(999);
     fullReset(gBootloaderRequested);
   }
 
+  TRACE_MAIN(15);
   if (start - statAt >= 10000) {
     Serial.printf("[stat] %u fps, frame %u us, est %u mA, scale %u, heap %u\n", frames * 1000 / (start - statAt),
                   frames ? busyUs / frames : 0, gDisplay.estimatedMa(), gDisplay.powerScale(), ESP.getFreeHeap());
@@ -186,6 +252,7 @@ void loop() {
     busyUs = 0;
   }
 
+  TRACE_MAIN(16);
   uint32_t spent = millis() - start;
   if (spent < FRAME_MS) delay(FRAME_MS - spent);
   else delay(1);  // let lower priority tasks run

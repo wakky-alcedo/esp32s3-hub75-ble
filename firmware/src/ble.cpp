@@ -2,6 +2,7 @@
 #include <NimBLEDevice.h>
 #include "commands.h"
 #include "player.h"
+#include "trace.h"
 #include "transfer.h"
 
 #define SERVICE_UUID "6e4c0001-7b3a-4f2e-9a61-4c45442d4453"
@@ -39,12 +40,16 @@ static void clearBonds() {
 
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer *s, ble_gap_conn_desc *desc) override {
+    TRACE_BLE(100);
     sConnected = true;
     Serial.println("[ble] connected");
+    TRACE_BLE(101);
     // Ask for a faster connection interval: 7.5-15ms, no latency, 4s timeout.
     s->updateConnParams(desc->conn_handle, 6, 12, 0, 400);
+    TRACE_BLE(102);
   }
   void onDisconnect(NimBLEServer *s) override {
+    TRACE_BLE(110);
     sConnected = false;
     sMtu = 23;
     Serial.println("[ble] disconnected");
@@ -54,6 +59,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     }
     gReceiver.abort();
     NimBLEDevice::startAdvertising();
+    TRACE_BLE(111);
   }
   void onMTUChange(uint16_t mtu, ble_gap_conn_desc *) override {
     sMtu = mtu;
@@ -70,15 +76,18 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     return pin;
   }
   void onAuthenticationComplete(ble_gap_conn_desc *desc) override {
+    TRACE_BLE(130);
     Serial.printf("[ble] auth complete: encrypted=%d bonded=%d\n", desc->sec_state.encrypted, desc->sec_state.bonded);
     StateLock lock;
     gPlayer.setPinOverlay("");
     if (!desc->sec_state.encrypted) gPlayer.toast("PAIR FAILED", 2000);
+    TRACE_BLE(131);
   }
 };
 
 class ControlCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic *c) override {
+    TRACE_BLE(140);
     std::string v = c->getValue();
     JsonDocument req, resp;
     if (deserializeJson(req, v.data(), v.size())) {
@@ -89,7 +98,9 @@ class ControlCallbacks : public NimBLECharacteristicCallbacks {
     }
     String out;
     serializeJson(resp, out);
+    TRACE_BLE(141);
     sendFragmented(out);
+    TRACE_BLE(142);
   }
 };
 

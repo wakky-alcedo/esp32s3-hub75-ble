@@ -80,10 +80,13 @@ class _PresetEditorState extends State<PresetEditor> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('プリセット ${widget.index + 1}')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: app.connected && preset.items.isNotEmpty ? _send : null,
-        icon: const Icon(Icons.send),
-        label: Text(app.connected ? '送信して再生' : '未接続'),
+      floatingActionButton: ListenableBuilder(
+        listenable: app,
+        builder: (_, _) => FloatingActionButton.extended(
+          onPressed: app.connected && preset.items.isNotEmpty ? _send : null,
+          icon: const Icon(Icons.send),
+          label: Text(app.connected ? '送信して再生' : '未接続'),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
