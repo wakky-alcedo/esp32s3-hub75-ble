@@ -21,7 +21,7 @@ Android スマホ / Windows PC から Bluetooth Low Energy (BLE) で表示内容
 ## 2. リポジトリ構成
 
 ```
-led-display-controller/
+esp32s3-hub75-ble/
   SPEC.md                  本書
   docs/protocol.md         BLE プロトコル定義（FW / アプリ共通の正本）
   firmware/                PlatformIO プロジェクト（ESP32-S3, Arduino framework）
