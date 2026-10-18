@@ -18,6 +18,7 @@ class _SettingsTabState extends State<SettingsTab> {
     'limitAcMa': app.config['limitAcMa'] ?? 4000,
   };
   late String name = app.config['name'] as String? ?? '';
+  late int volume = app.config['volume'] as int? ?? 60;
 
   bool get _layoutDirty {
     final cur = app.config['panel'] as Map? ?? {};
@@ -143,6 +144,31 @@ class _SettingsTabState extends State<SettingsTab> {
           onChanged: (v) => setState(() => power['limitAcMa'] = (v ~/ 500) * 500),
           onChangeEnd: (v) => app.setConfig({'limitAcMa': (v ~/ 500) * 500}),
         ),
+        const Divider(height: 32),
+        Text('音', style: Theme.of(context).textTheme.titleMedium),
+        if (app.info['sound'] != true)
+          const Text('スピーカーが使えません（コーデックが見つかりません）', style: TextStyle(color: Colors.redAccent)),
+        Row(children: [
+          Expanded(
+            child: IntSlider(
+              label: '音量',
+              value: volume,
+              min: 0,
+              max: 100,
+              format: (v) => v == 0 ? '消音' : '$v',
+              onChanged: (v) => setState(() => volume = v),
+              onChangeEnd: (v) async {
+                await app.setConfig({'volume': v});
+                app.run('sound', {'name': 'chime'});
+              },
+            ),
+          ),
+          IconButton(
+            tooltip: '試しに鳴らす',
+            onPressed: app.info['sound'] == true ? () => app.run('sound', {'name': 'chime'}) : null,
+            icon: const Icon(Icons.volume_up),
+          ),
+        ]),
         const Divider(height: 32),
         Text('本体', style: Theme.of(context).textTheme.titleMedium),
         Row(children: [

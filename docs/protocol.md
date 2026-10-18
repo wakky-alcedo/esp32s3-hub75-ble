@@ -25,7 +25,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 
 | cmd | 引数 | 応答 |
 |---|---|---|
-| `info` | | `info`: fw, proto, name, width, height, fsTotal, fsUsed, rtc, time, effects, presets[] |
+| `info` | | `info`: fw, proto, name, width, height, fsTotal, fsUsed, rtc, sound, time, effects, presets[] |
 | `status` | | `status`: preset, demo, item, items, paused, standby, brightness, speed, mA, powerScale |
 | `get_config` / `set_config` | `config`（部分更新可） | `reboot`: 再起動が必要だったか（必要なら自動で再起動する） |
 | `brightness` | `value` 0-255, `save`（既定 true） | |
@@ -42,6 +42,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | `file_status` | | `active`, `expected` |
 | `file_end` / `file_abort` | | `file_end` でサイズと CRC を検証し、確定する |
 | `sync_time` | `epoch`(UTC 秒), `tzOffsetMin` | RTC にも書き込む |
+| `sound` | `name`: tick/beep/chime/alarm（既定 chime） | 試し鳴らし。音量は設定の `volume` |
 | `clear_bonds` / `reboot` | | |
 
 ### イベント（`{"evt": ...}`、id なし）
@@ -78,12 +79,12 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | `image` | `asset`（LDB1） |
 | `gif` | `asset`（.gif、パネルサイズにリサイズ済み）、`loops` |
 | `clock` | `format`: HM/HMS、`color`、`label`/`labelText`、`labelColor` |
-| `countdown` | `target`(UTC 秒) / `seconds`（タイマー） / `mode: "stopwatch"`、`color`、`label`/`labelText` |
+| `countdown` | `target`(UTC 秒) / `seconds`（タイマー） / `mode: "stopwatch"`、`color`、`label`/`labelText`、`endSound`: none/beep/chime/alarm（0 になった瞬間に鳴らす）、`tickFrom`: 残りこの秒数から毎秒ピッと鳴らす（0 で無し）。タイマーは `duration` を省くと、終わって 5 秒後まで表示する |
 | `effect` | `effect`: plasma/fire/matrix/life/stars/noise/rainbow、`params` |
 
 エフェクトのパラメータ：plasma `palette`、fire `cooling` `sparking`、matrix `color`、life `stepMs`、stars `count`、noise `palette` `scale`、rainbow `density`。
 パレット名：rainbow, heat, lava, cloud, ocean, forest, party。
 
 ### 設定（`set_config` の `config`）
-`panel`: {w, h, cols, rows, startTop, startLeft, serpentine, rotation(0-3), flipH, flipV, driver, clkphase}、`brightness`、`brightLevels`[3]、`powerProfile`: battery/ac、`limitBatteryMa`、`limitAcMa`、`panelFullMa`、`name`、`speed`、`tzOffsetMin`
+`panel`: {w, h, cols, rows, startTop, startLeft, serpentine, rotation(0-3), flipH, flipV, driver, clkphase}、`brightness`、`brightLevels`[3]、`powerProfile`: battery/ac、`limitBatteryMa`、`limitAcMa`、`panelFullMa`、`name`、`speed`、`tzOffsetMin`、`volume`（0-100、0 で消音）
 - 回転・反転のうち、キャンバスのサイズが変わらないもの（反転・180°）はその場で反映する。それ以外のパネル構成と名前の変更は再起動して反映する

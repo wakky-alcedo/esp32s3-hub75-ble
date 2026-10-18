@@ -16,6 +16,13 @@ const effectLabels = {
 };
 const paletteNames = ['rainbow', 'heat', 'lava', 'cloud', 'ocean', 'forest', 'party'];
 
+const endSoundLabels = {
+  'none': 'なし',
+  'beep': 'ピー',
+  'chime': 'ピンポーン',
+  'alarm': 'ピピピッ（アラーム）',
+};
+
 const itemTypeLabels = {
   'text': 'テキスト',
   'image': '画像',
@@ -75,6 +82,8 @@ class ContentItem {
           'color': 0xFF00FF80,
           'label': '開演まで',
           'labelColor': 0xFFFFFFFF,
+          'endSound': 'alarm', // none | beep | chime | alarm
+          'tickFrom': 0, // beep every second from this many seconds left; 0 = off
           'duration': 10000,
           'bg': {'type': 'color', 'color': 0xFF000000},
         };

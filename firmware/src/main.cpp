@@ -13,6 +13,7 @@
 #include "fsutil.h"
 #include "player.h"
 #include "rtc.h"
+#include "sound.h"
 #include "trace.h"
 
 static const uint32_t FRAME_MS = 16;
@@ -199,6 +200,7 @@ void setup() {
   }
   TRACE_MAIN(3);
   rtcBegin();
+  soundBegin();  // shares the RTC's I2C bus
   TRACE_MAIN(4);
   bleBegin(gConfig.name.c_str());
   TRACE_MAIN(5);

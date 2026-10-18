@@ -37,6 +37,7 @@ void Config::toJson(JsonObject o) const {
   o["lastPreset"] = lastPreset;
   o["speed"] = speed;
   o["tzOffsetMin"] = tzOffsetMin;
+  o["volume"] = volume;
 }
 
 template <typename T>
@@ -96,6 +97,8 @@ void Config::fromJson(JsonObjectConst o, bool &needsRestart) {
   setIf(o, "speed", speed);
   speed = constrain(speed, 10, 400);
   setIf(o, "tzOffsetMin", tzOffsetMin);
+  setIf(o, "volume", volume);
+  volume = min<uint8_t>(volume, 100);
 }
 
 bool Config::load() {

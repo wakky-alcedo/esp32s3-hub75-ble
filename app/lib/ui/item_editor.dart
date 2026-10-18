@@ -354,7 +354,11 @@ class _ItemEditorState extends State<ItemEditor> {
         label: '種類',
         value: mode,
         options: const {'target': '指定時刻まで', 'timer': 'タイマー', 'stopwatch': 'ストップウォッチ'},
-        onChanged: (v) => _set('mode', v),
+        onChanged: (v) {
+          _set('mode', v);
+          // A timer normally stays on screen until it has run out.
+          if (v == 'timer') _set('duration', 0);
+        },
       ),
       if (mode == 'target')
         ListTile(
@@ -379,6 +383,22 @@ class _ItemEditorState extends State<ItemEditor> {
           format: (v) => '${v ~/ 60}分${v % 60}秒',
           onChanged: (v) => _set('seconds', (v ~/ 10) * 10),
         ),
+      if (mode != 'stopwatch') ...[
+        ChoiceField(
+          label: '終了の音',
+          value: p['endSound'] as String,
+          options: endSoundLabels,
+          onChanged: (v) => _set('endSound', v),
+        ),
+        IntSlider(
+          label: 'カウント音',
+          value: p['tickFrom'] as int,
+          min: 0,
+          max: 10,
+          format: (v) => v == 0 ? 'なし' : '残り$v秒～',
+          onChanged: (v) => _set('tickFrom', v),
+        ),
+      ],
       ColorField(label: '数字の色', value: p['color'] as int, onChanged: (v) => _set('color', v)),
       ..._labelFields(),
       _bgField(),
@@ -428,6 +448,7 @@ class _ItemEditorState extends State<ItemEditor> {
     final natural = switch (item.type) {
       'text' => p['mode'] == 'scroll',
       'gif' => true,
+      'countdown' => p['mode'] == 'timer',
       _ => false,
     };
     final value = p['duration'] as int? ?? 0;
@@ -436,7 +457,13 @@ class _ItemEditorState extends State<ItemEditor> {
       value: value ~/ 1000,
       min: natural ? 0 : 1,
       max: 120,
-      format: (v) => v == 0 ? (item.type == 'gif' ? 'ループ回数' : '繰り返し回数') : '$v秒',
+      format: (v) => v == 0
+          ? switch (item.type) {
+              'gif' => 'ループ回数',
+              'countdown' => '最後まで',
+              _ => '繰り返し回数',
+            }
+          : '$v秒',
       onChanged: (v) => _set('duration', v * 1000),
     );
   }

@@ -7,6 +7,7 @@
 #include "fsutil.h"
 #include "player.h"
 #include "rtc.h"
+#include "sound.h"
 #include "transfer.h"
 
 volatile bool gRebootRequested = false;
@@ -27,6 +28,7 @@ static void infoJson(JsonObject o) {
   o["fsTotal"] = LittleFS.totalBytes();
   o["fsUsed"] = LittleFS.usedBytes();
   o["rtc"] = rtcPresent();
+  o["sound"] = soundPresent();
   o["time"] = (int64_t)time(nullptr);
   o["effects"] = effectNames();
   JsonArray presets = o["presets"].to<JsonArray>();
@@ -139,6 +141,10 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
       gConfig.tzOffsetMin = req["tzOffsetMin"];
       gConfig.save();
     }
+  } else if (!strcmp(cmd, "sound")) {
+    // Test playback, e.g. from the volume setting.
+    if (!soundPresent()) return fail(resp, "no sound");
+    soundPlay(soundFromName(req["name"] | "chime"));
   } else if (!strcmp(cmd, "clear_bonds")) {
     if (gClearBondsHook) gClearBondsHook();
   } else if (!strcmp(cmd, "reboot")) {

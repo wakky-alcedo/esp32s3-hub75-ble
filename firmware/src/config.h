@@ -47,6 +47,7 @@ struct Config {
   uint8_t lastPreset = 0;
   uint16_t speed = 100;  // percent, applies to motion only
   int16_t tzOffsetMin = 540;
+  uint8_t volume = 60;  // speaker, 0-100 (0 = mute)
 
   uint16_t currentLimitMa() const {
     return powerProfile == POWER_AC ? limitAcMa : limitBatteryMa;

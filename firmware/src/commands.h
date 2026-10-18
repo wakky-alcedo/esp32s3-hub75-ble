@@ -1,7 +1,7 @@
 #pragma once
 #include <ArduinoJson.h>
 
-static const char *FW_VERSION = "0.1.0";
+static const char *FW_VERSION = "0.2.0";
 static const int PROTOCOL_VERSION = 1;
 
 // Executes one JSON command ({"cmd": "...", "id": n, ...}) and fills resp.

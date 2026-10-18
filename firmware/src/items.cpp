@@ -5,6 +5,7 @@
 #include "color.h"
 #include "config.h"
 #include "fsutil.h"
+#include "sound.h"
 
 static String assetPath(const char *name) {
   String p = "/assets/";
@@ -320,10 +321,17 @@ class CountdownItem : public DigitsItem {
     stopwatch_ = !strcmp(def["mode"] | "countdown", "stopwatch");
     target_ = def["target"] | 0;
     timerMs_ = (uint32_t)(def["seconds"] | 0) * 1000;
+    endSound_ = soundFromName(def["endSound"]);
+    tickFrom_ = def["tickFrom"] | 0;
     return DigitsItem::load(def, w, h);
   }
 
  protected:
+  // A timer without "duration" stays up until it has run out, plus a moment
+  // at 00:00 for the end sound.
+  bool endsNaturally() const override { return !stopwatch_ && !target_; }
+  bool naturalEnd() const override { return elapsedMs_ >= timerMs_ + 5000; }
+
   void text(char *out, size_t n, bool &dim) override {
     int32_t secs;
     if (stopwatch_) {
@@ -338,6 +346,7 @@ class CountdownItem : public DigitsItem {
     } else {
       secs = ((int64_t)timerMs_ - elapsedMs_ + 999) / 1000;
     }
+    if (!stopwatch_) sounds(secs);
     if (secs <= 0) {
       secs = 0;
       dim = (phaseMs_ / 500) % 2;  // blink at zero
@@ -348,9 +357,22 @@ class CountdownItem : public DigitsItem {
   }
 
  private:
+  // Plays only on transitions seen while this item is on screen, so showing
+  // a countdown that already ended stays quiet.
+  void sounds(int32_t secs) {
+    if (lastSecs_ != INT32_MIN && secs != lastSecs_) {
+      if (secs <= 0 && lastSecs_ > 0) soundPlay(endSound_);
+      else if (secs > 0 && secs <= tickFrom_) soundPlay(SOUND_TICK);
+    }
+    lastSecs_ = secs;
+  }
+
   bool stopwatch_ = false;
   int64_t target_ = 0;
   uint32_t timerMs_ = 0;
+  Sound endSound_ = SOUND_NONE;
+  int32_t tickFrom_ = 0;
+  int32_t lastSecs_ = INT32_MIN;
 };
 
 // ---------------------------------------------------------------------------

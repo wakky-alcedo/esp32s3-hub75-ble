@@ -119,6 +119,10 @@ Future<DeviceItem> toDevice(ContentItem item, int w, int h) async {
           default:
             json['target'] = (p['target'] as int) ~/ 1000;
         }
+        if (p['mode'] != 'stopwatch') {
+          json['endSound'] = p['endSound'];
+          json['tickFrom'] = p['tickFrom'];
+        }
       }
     case 'effect':
       json['effect'] = p['effect'];
