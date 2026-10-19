@@ -25,8 +25,8 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 
 | cmd | 引数 | 応答 |
 |---|---|---|
-| `info` | | `info`: fw, proto, name, width, height, fsTotal, fsUsed, rtc, sound, time, effects, presets[] |
-| `status` | | `status`: preset, demo, item, items, paused, standby, brightness, speed, mA, powerScale |
+| `info` | | `info`: fw, proto, name, width, height, fsTotal, fsUsed, rtc, sound, mic, sensors, sd{mounted, total, used}, time, bootReason（前回のリセット理由）, effects, presets[] |
+| `status` | | `status`: preset, demo, item, items, paused, standby, brightness, speed, mA, powerScale, uptime（秒） |
 | `get_config` / `set_config` | `config`（部分更新可） | `reboot`: 再起動が必要だったか（必要なら自動で再起動する） |
 | `brightness` | `value` 0-255, `save`（既定 true） | |
 | `speed` | `value` 10-400(%), `save` | |
@@ -35,14 +35,21 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | `preset` | `index` 0-7 | |
 | `get_preset` / `set_preset` / `delete_preset` | `index`, `preset` | |
 | `reload` | `index` | ファイル転送で更新したプリセットを読み直す |
-| `list_files` | `dir`（既定 `/assets`） | `files`: [{name, size}] |
-| `delete_file` | `path` | |
+| `list_files` | `dir`（既定 `/assets`。`/sd/...` で SD カード） | `files`: [{name, size, dir?}] |
+| `delete_file` | `path` | ファイルまたは空のディレクトリ |
+| `read_file` | `path`, `offset`, `length`（最大 3072） | `size`（全体）, `offset`, `data`(base64) |
+| `sd_mount` | | SD カードをマウントし直す。`sd`: {mounted, total, used} |
 | `file_begin` | `path`, `size`, `crc`（CRC-32/zlib） | |
 | `file_data` | `offset`, `data`(base64) | シリアル用。BLE では Bulk を使う |
 | `file_status` | | `active`, `expected` |
 | `file_end` / `file_abort` | | `file_end` でサイズと CRC を検証し、確定する |
 | `sync_time` | `epoch`(UTC 秒), `tzOffsetMin` | RTC にも書き込む |
 | `sound` | `name`: tick/beep/chime/alarm（既定 chime） | 試し鳴らし。音量は設定の `volume` |
+| `sensors` | | `sensors`: envOk, imuOk, tempC, humidity, chipC, acc[3](g), gyro[3](°/s), accRaw[3]（基板の軸） |
+| `imu_calibrate` | | パネルをいつもの向きに立てて送ると、今の重力の向きを「下」として `imuRotation` を保存する。寝かせていると失敗 |
+| `mic` | | `mic`: present, dbfs, level, bass, peakHz, beats, bands[64](0-99), bandDb[64] |
+| `snapshot` | | 直前に描いたフレーム。`w`, `h`, `data`(base64、RGB565 LE)。デバッグ用 |
+| `mic_sim` / `sensors_sim` | `ms`／`grav`[3], `shake`, `ms` | 入力を合成音・指定した重力に置き換える（動作確認用） |
 | `clear_bonds` / `reboot` | | |
 
 ### イベント（`{"evt": ...}`、id なし）
@@ -50,7 +57,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 - `file_nack`：Bulk のオフセットが飛んだ。`expected` から送り直す
 
 ## ファイル転送（BLE）
-1. `file_begin {path, size, crc}`。書ける場所は `/assets/*` と `/presets/*` だけ
+1. `file_begin {path, size, crc}`。書ける場所は `/assets/*`、`/presets/*`、`/sd/*`（SD カード。途中のディレクトリは自動で作る）
 2. Bulk に `[u32 LE offset][data]` を順に送る
 3. 数チャンクごとに `file_status` で `expected` を確認する（フロー制御と抜けの検出）
 4. `file_end` → `ok` で確定する（一時ファイルから rename するので、途中で電源が落ちても元のファイルは壊れない）
@@ -80,11 +87,13 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | `gif` | `asset`（.gif、パネルサイズにリサイズ済み）、`loops` |
 | `clock` | `format`: HM/HMS、`color`、`label`/`labelText`、`labelColor` |
 | `countdown` | `target`(UTC 秒) / `seconds`（タイマー） / `mode: "stopwatch"`、`color`、`label`/`labelText`、`endSound`: none/beep/chime/alarm（0 になった瞬間に鳴らす）、`tickFrom`: 残りこの秒数から毎秒ピッと鳴らす（0 で無し）。タイマーは `duration` を省くと、終わって 5 秒後まで表示する |
-| `effect` | `effect`: plasma/fire/matrix/life/stars/noise/rainbow、`params` |
+| `effect` | `effect`: plasma/fire/matrix/life/stars/noise/rainbow、音: spectrum/radial/waterfall、傾き: sand/liquid/flow/marbles/bubbles、`params` |
+| `sensors` | `pages`: env/accel/gyro/sound の配列（順に切り替え）、`pageMs`(既定 3000)、`color`、`headColor`。`duration` を省くと全ページを 1 回 |
 
-エフェクトのパラメータ：plasma `palette`、fire `cooling` `sparking`、matrix `color`、life `stepMs`、stars `count`、noise `palette` `scale`、rainbow `density`。
+エフェクトのパラメータ：plasma `palette`、fire `cooling` `sparking`、matrix `color`、life `stepMs`、stars `count`、noise `palette` `scale`、rainbow `density`、spectrum `style`: bars/mirror、waterfall `palette`: heat/ocean、sand・liquid `fill`(%)、flow `count`、marbles `count`。
+`asset` に `/sd/...` と書くと SD カードのファイルを使う（gif・image）。
 パレット名：rainbow, heat, lava, cloud, ocean, forest, party。
 
 ### 設定（`set_config` の `config`）
-`panel`: {w, h, cols, rows, startTop, startLeft, serpentine, rotation(0-3), flipH, flipV, driver, clkphase}、`brightness`、`brightLevels`[3]、`powerProfile`: battery/ac、`limitBatteryMa`、`limitAcMa`、`panelFullMa`、`name`、`speed`、`tzOffsetMin`、`volume`（0-100、0 で消音）
+`panel`: {w, h, cols, rows, startTop, startLeft, serpentine, rotation(0-3), flipH, flipV, driver, clkphase}、`brightness`、`brightLevels`[3]、`powerProfile`: battery/ac、`limitBatteryMa`、`limitAcMa`、`panelFullMa`、`name`、`speed`、`tzOffsetMin`、`volume`（0-100、0 で消音）、`imuRotation`（0-3、基板の取り付け向き。`imu_calibrate` で設定）、`tempOffset10`（温度の補正、0.1℃単位）、`micGain`（0-37dB）
 - 回転・反転のうち、キャンバスのサイズが変わらないもの（反転・180°）はその場で反映する。それ以外のパネル構成と名前の変更は再起動して反映する

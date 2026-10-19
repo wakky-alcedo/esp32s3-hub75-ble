@@ -5,10 +5,14 @@
 #include "color.h"
 #include "config.h"
 #include "fsutil.h"
+#include "mic.h"
+#include "sensors.h"
 #include "sound.h"
 #include "usb_console.h"
 
+// Asset names are files in /assets; "/sd/..." names a file on the TF card.
 static String assetPath(const char *name) {
+  if (!strncmp(name, "/sd/", 4)) return name;
   String p = "/assets/";
   p += name;
   return p;
@@ -395,6 +399,117 @@ class EffectItem : public Item {
 };
 
 // ---------------------------------------------------------------------------
+// Live sensor readings as text, a few lines per page, pages cycling.
+class SensorsItem : public Item {
+ public:
+  ~SensorsItem() override {
+    if (usesMic_) micRelease();
+  }
+  bool load(JsonObjectConst def, int w, int h) override {
+    if (!Item::load(def, w, h)) return false;
+    JsonArrayConst pages = def["pages"];
+    if (pages.isNull()) {
+      for (Page p : {PAGE_ENV, PAGE_ACCEL, PAGE_GYRO, PAGE_SOUND}) pages_[count_++] = p;
+    } else {
+      for (JsonVariantConst v : pages) {
+        Page p = pageFromName(v | "");
+        if (p != PAGE_NONE && count_ < MAX_PAGES) pages_[count_++] = p;
+      }
+    }
+    if (!count_) return false;
+    for (int i = 0; i < count_; i++) usesMic_ |= pages_[i] == PAGE_SOUND;
+    if (usesMic_) micAcquire();
+    pageMs_ = max(1000, (int)(def["pageMs"] | 3000));
+    color_ = parseColor(def["color"], 0xFFFF);
+    headColor_ = parseColor(def["headColor"], rgb565(255, 200, 40));
+    return true;
+  }
+
+ protected:
+  uint32_t defaultDurationMs() const override { return pageMs_ * count_; }
+
+  void draw(GFXcanvas16 &c, uint32_t) override {
+    // Pages that fit at once (8px per line, header + 3 values each).
+    int perScreen = max(1, h_ / 32);
+    int first = (elapsedMs_ / pageMs_ * perScreen) % count_;
+    for (int k = 0; k < perScreen && k < count_; k++) drawPage(c, pages_[(first + k) % count_], k * 32);
+  }
+
+ private:
+  enum Page : uint8_t { PAGE_NONE, PAGE_ENV, PAGE_ACCEL, PAGE_GYRO, PAGE_SOUND };
+  static const int MAX_PAGES = 8;
+
+  static Page pageFromName(const char *n) {
+    if (!strcmp(n, "env")) return PAGE_ENV;
+    if (!strcmp(n, "accel")) return PAGE_ACCEL;
+    if (!strcmp(n, "gyro")) return PAGE_GYRO;
+    if (!strcmp(n, "sound")) return PAGE_SOUND;
+    return PAGE_NONE;
+  }
+
+  void line(GFXcanvas16 &c, int y, const char *text, uint16_t col) {
+    drawBuiltinText(c, text, max(0, (w_ - builtinTextWidth(text, 1)) / 2), y, 1, col);
+  }
+
+  void drawPage(GFXcanvas16 &c, Page page, int top) {
+    SensorData d = sensorsGet();
+    char l[3][16];
+    const char *head = "";
+    switch (page) {
+      case PAGE_ENV:
+        head = "TEMP/HUMID";
+        if (d.envOk) {
+          snprintf(l[0], 16, "%.1fC", d.tempC);
+          snprintf(l[1], 16, "%.1f%%", d.humidity);
+        } else {
+          strcpy(l[0], "--.-C");
+          strcpy(l[1], "--.-%");
+        }
+        snprintf(l[2], 16, "CPU %.0fC", d.chipC);
+        break;
+      case PAGE_ACCEL:
+        head = "ACCEL g";
+        snprintf(l[0], 16, "X%+6.2f", d.ax);
+        snprintf(l[1], 16, "Y%+6.2f", d.ay);
+        snprintf(l[2], 16, "Z%+6.2f", d.az);
+        break;
+      case PAGE_GYRO:
+        head = "GYRO dps";
+        snprintf(l[0], 16, "X%+5d", (int)lroundf(d.gx));
+        snprintf(l[1], 16, "Y%+5d", (int)lroundf(d.gy));
+        snprintf(l[2], 16, "Z%+5d", (int)lroundf(d.gz));
+        break;
+      case PAGE_SOUND: {
+        head = "SOUND";
+        MicFrame m = micGet();
+        snprintf(l[0], 16, "%.0fdBFS", m.dbfs);
+        snprintf(l[1], 16, "%.0fHz", m.peakHz);
+        l[2][0] = 0;
+        // Level meter instead of a third line.
+        int bw = (int)(m.level * 2.5f * (w_ - 8));
+        bw = constrain(bw, 0, w_ - 8);
+        for (int x = 0; x < bw; x++) c.drawFastVLine(4 + x, top + 25, 5, hsv565(96 - x * 96 / (w_ - 8), 255, 255));
+        break;
+      }
+      default:
+        return;
+    }
+    bool imuPage = page == PAGE_ACCEL || page == PAGE_GYRO;
+    line(c, top, head, headColor_);
+    for (int i = 0; i < 3; i++) {
+      if (!l[i][0]) continue;
+      line(c, top + 8 + i * 8, imuPage && !d.imuOk ? "--" : l[i], color_);
+    }
+  }
+
+  Page pages_[MAX_PAGES] = {};
+  int count_ = 0;
+  bool usesMic_ = false;
+  uint32_t pageMs_ = 3000;
+  uint16_t color_ = 0xFFFF, headColor_ = 0;
+};
+
+// ---------------------------------------------------------------------------
 Item *createItem(JsonObjectConst def, int w, int h) {
   const char *type = def["type"] | "";
   Item *item = nullptr;
@@ -404,6 +519,7 @@ Item *createItem(JsonObjectConst def, int w, int h) {
   else if (!strcmp(type, "clock")) item = new ClockItem();
   else if (!strcmp(type, "countdown")) item = new CountdownItem();
   else if (!strcmp(type, "effect")) item = new EffectItem();
+  else if (!strcmp(type, "sensors")) item = new SensorsItem();
   if (!item) {
     Console.printf("[items] unknown type '%s'\n", type);
     return nullptr;

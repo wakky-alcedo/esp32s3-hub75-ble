@@ -38,6 +38,9 @@ void Config::toJson(JsonObject o) const {
   o["speed"] = speed;
   o["tzOffsetMin"] = tzOffsetMin;
   o["volume"] = volume;
+  o["imuRotation"] = imuRotation;
+  o["tempOffset10"] = tempOffset10;
+  o["micGain"] = micGain;
 }
 
 template <typename T>
@@ -99,6 +102,12 @@ void Config::fromJson(JsonObjectConst o, bool &needsRestart) {
   setIf(o, "tzOffsetMin", tzOffsetMin);
   setIf(o, "volume", volume);
   volume = min<uint8_t>(volume, 100);
+  setIf(o, "imuRotation", imuRotation);
+  imuRotation &= 3;
+  setIf(o, "tempOffset10", tempOffset10);
+  tempOffset10 = constrain(tempOffset10, -300, 300);
+  setIf(o, "micGain", micGain);
+  micGain = min<uint8_t>(micGain, 37);
 }
 
 bool Config::load() {

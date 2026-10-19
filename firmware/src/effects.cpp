@@ -325,7 +325,9 @@ Effect *createEffect(const char *name) {
   if (!strcmp(name, "stars")) return new StarsEffect();
   if (!strcmp(name, "noise")) return new NoiseEffect();
   if (!strcmp(name, "rainbow")) return new RainbowEffect();
-  return nullptr;
+  return createLiveEffect(name);
 }
 
-const char *effectNames() { return "plasma,fire,matrix,life,stars,noise,rainbow"; }
+const char *effectNames() {
+  return "plasma,fire,matrix,life,stars,noise,rainbow,spectrum,radial,waterfall,sand,liquid,flow,marbles,bubbles";
+}

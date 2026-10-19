@@ -11,8 +11,11 @@
 #include "config.h"
 #include "display.h"
 #include "fsutil.h"
+#include "mic.h"
 #include "player.h"
 #include "rtc.h"
+#include "sdcard.h"
+#include "sensors.h"
 #include "sound.h"
 #include "trace.h"
 #include "usb_console.h"
@@ -182,8 +185,10 @@ void setup() {
   delay(200);
   Console.printf("\n[boot] LED Display Controller %s\n", FW_VERSION);
   Console.printf("[boot] reset reason %d\n", resetReason);
+  gBootReason = resetReason;
   if ((sRecoveredFrom & 0xFFFF0000u) == RECOVERED_MAGIC) {
     Console.printf("[boot] recovered from partial reset (reason %u)\n", sRecoveredFrom & 0xFFFF);
+    gBootReason = sRecoveredFrom & 0xFFFF;
   }
   sRecoveredFrom = 0;
   if (resetReason != 1) Console.printf("[boot] last trace: main=%u ble=%u\n", prevMain, prevBle);
@@ -200,6 +205,9 @@ void setup() {
   TRACE_MAIN(3);
   rtcBegin();
   soundBegin();  // shares the RTC's I2C bus
+  micBegin();
+  sensorsBegin();
+  sdBegin();
   TRACE_MAIN(4);
   bleBegin(gConfig.name.c_str());
   TRACE_MAIN(5);
@@ -223,6 +231,7 @@ void loop() {
   loopWatchdogFeed();
 
   TRACE_MAIN(10);
+  Console.poll();
   pollSerial();
   TRACE_MAIN(11);
   handleButton();

@@ -18,7 +18,8 @@ class FileReceiver {
 
  private:
   File file_;
-  String path_;
+  fs::FS *fs_ = nullptr;
+  String path_, local_;  // as requested / within fs_
   uint32_t size_ = 0, crc_ = 0, received_ = 0, running_ = 0;
   bool active_ = false;
 };

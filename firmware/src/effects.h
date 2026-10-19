@@ -19,5 +19,7 @@ class Effect {
 
 // Returns nullptr for an unknown name.
 Effect *createEffect(const char *name);
+// Microphone and motion sensor effects (effects_live.cpp).
+Effect *createLiveEffect(const char *name);
 // Comma separated list of effect names, for GET_INFO.
 const char *effectNames();

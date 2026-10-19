@@ -17,10 +17,14 @@ class UsbConsole : public Stream {
   size_t write(uint8_t c) override { return write(&c, 1); }
   size_t write(const uint8_t *buf, size_t len) override;
   void flush() override;
+  // Sends a partly filled packet; call regularly (the main loop does).
+  void poll();
   using Print::write;
 
  private:
   bool fill();
+  void sendPending();
+  bool pending_ = false;  // bytes in the FIFO not yet handed to the host
   int peeked_ = -1;
   bool stalled_ = false;
   SemaphoreHandle_t txLock_ = nullptr;

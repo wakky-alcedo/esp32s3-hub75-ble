@@ -1,10 +1,15 @@
 #pragma once
 #include <Arduino.h>
+#include <FS.h>
 
 // LittleFS helpers. Writes go to "<path>.tmp" and are renamed into place so a
 // power cut mid-write never leaves a half-written file behind.
 
 bool fsBegin();
+// Paths starting with "/sd/" live on the TF card (mounting it on demand),
+// everything else on LittleFS. Sets local to the path within that FS;
+// returns nullptr when the card is not available.
+fs::FS *fsFor(const char *path, String &local);
 bool fsWriteAtomic(const char *path, const uint8_t *data, size_t len);
 bool fsWriteAtomic(const char *path, const String &text);
 bool fsCommitTmp(const char *path);  // rename "<path>.tmp" -> path

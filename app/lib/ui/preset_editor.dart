@@ -16,6 +16,7 @@ class PresetEditor extends StatefulWidget {
 class _PresetEditorState extends State<PresetEditor> {
   Preset get preset => Library.instance.presets[widget.index];
   final app = AppState.instance;
+  int _nameRev = 0; // rebuilds the name field when a template renames the preset
 
   Future<void> _save() => Library.instance.save();
 
@@ -40,6 +41,31 @@ class _PresetEditorState extends State<PresetEditor> {
         context,
         MaterialPageRoute(builder: (_) => ItemEditor(item: item, width: app.width, height: app.height)),
       );
+
+  Future<void> _applyTemplate(String name) async {
+    if (preset.items.isNotEmpty) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          content: Text('今の項目を「$name」の内容に置き換えます'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('やめる')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('置き換える')),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    final t = presetTemplates[name]!();
+    setState(() {
+      preset.items = t.items;
+      if (preset.name.isEmpty) {
+        preset.name = t.name;
+        _nameRev++;
+      }
+    });
+    await _save();
+  }
 
   Future<void> _send() async {
     final link = app.link;
@@ -79,7 +105,19 @@ class _PresetEditorState extends State<PresetEditor> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('プリセット ${widget.index + 1}')),
+      appBar: AppBar(
+        title: Text('プリセット ${widget.index + 1}'),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'テンプレート',
+            icon: const Icon(Icons.auto_fix_high),
+            onSelected: _applyTemplate,
+            itemBuilder: (_) => [
+              for (final name in presetTemplates.keys) PopupMenuItem(value: name, child: Text('テンプレート: $name')),
+            ],
+          ),
+        ],
+      ),
       floatingActionButton: ListenableBuilder(
         listenable: app,
         builder: (_, _) => FloatingActionButton.extended(
@@ -92,6 +130,7 @@ class _PresetEditorState extends State<PresetEditor> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         children: [
           TextFormField(
+            key: ValueKey(_nameRev),
             initialValue: preset.name,
             decoration: const InputDecoration(labelText: '名前', border: OutlineInputBorder()),
             onChanged: (v) {
@@ -161,5 +200,6 @@ IconData _icon(String type) => switch (type) {
       'clock' => Icons.schedule,
       'countdown' => Icons.timer,
       'effect' => Icons.auto_awesome,
+      'sensors' => Icons.sensors,
       _ => Icons.help_outline,
     };

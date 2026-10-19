@@ -127,6 +127,11 @@ Future<DeviceItem> toDevice(ContentItem item, int w, int h) async {
     case 'effect':
       json['effect'] = p['effect'];
       json['params'] = p['params'] ?? {};
+    case 'sensors':
+      json['pages'] = p['pages'];
+      json['pageMs'] = p['pageMs'];
+      json['color'] = hexColor(p['color'] as int);
+      json['headColor'] = hexColor(p['headColor'] as int);
   }
   json.removeWhere((k, v) => v == null);
   return DeviceItem(json, assets);

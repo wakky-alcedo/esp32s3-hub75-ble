@@ -1,5 +1,6 @@
 #include "transfer.h"
 #include <LittleFS.h>
+#include <SD_MMC.h>
 #include "fsutil.h"
 
 FileReceiver gReceiver;
@@ -15,8 +16,16 @@ uint32_t crc32Update(uint32_t crc, const uint8_t *data, size_t len) {
 }
 
 static bool allowedTarget(const String &p) {
-  return fsValidPath(p.c_str()) && (p.startsWith("/assets/") || p.startsWith("/presets/")) &&
-         !p.endsWith(".tmp");
+  return fsValidPath(p.c_str()) && (p.startsWith("/assets/") || p.startsWith("/presets/") || p.startsWith("/sd/")) &&
+         !p.endsWith(".tmp") && !p.endsWith("/");
+}
+
+// Creates the missing parent directories of local.
+static void ensureParents(fs::FS &fs, const String &local) {
+  for (int i = local.indexOf('/', 1); i > 0; i = local.indexOf('/', i + 1)) {
+    String dir = local.substring(0, i);
+    if (!fs.exists(dir)) fs.mkdir(dir);
+  }
 }
 
 bool FileReceiver::begin(const char *path, uint32_t size, uint32_t crc, String &err) {
@@ -26,12 +35,19 @@ bool FileReceiver::begin(const char *path, uint32_t size, uint32_t crc, String &
     err = "bad path";
     return false;
   }
-  if (size > LittleFS.totalBytes() - LittleFS.usedBytes()) {
+  fs_ = fsFor(path_.c_str(), local_);
+  if (!fs_) {
+    err = "no sd card";
+    return false;
+  }
+  uint64_t free = fs_ == &LittleFS ? LittleFS.totalBytes() - LittleFS.usedBytes()
+                                   : SD_MMC.totalBytes() - SD_MMC.usedBytes();
+  if (size > free) {
     err = "no space";
     return false;
   }
-  fsEnsureDir(path_.startsWith("/assets/") ? "/assets" : "/presets");
-  file_ = LittleFS.open(path_ + ".tmp", "w");
+  ensureParents(*fs_, local_);
+  file_ = fs_->open(local_ + ".tmp", "w");
   if (!file_) {
     err = "open failed";
     return false;
@@ -61,12 +77,12 @@ bool FileReceiver::end(String &err) {
   active_ = false;
   if (received_ != size_) {
     err = "size mismatch";
-    LittleFS.remove(path_ + ".tmp");
+    fs_->remove(local_ + ".tmp");
     return false;
   }
   if (running_ != crc_) {
     err = "crc mismatch";
-    LittleFS.remove(path_ + ".tmp");
+    fs_->remove(local_ + ".tmp");
     return false;
   }
   if (!fsCommitTmp(path_.c_str())) {
@@ -79,6 +95,6 @@ bool FileReceiver::end(String &err) {
 void FileReceiver::abort() {
   if (!active_) return;
   file_.close();
-  LittleFS.remove(path_ + ".tmp");
+  fs_->remove(local_ + ".tmp");
   active_ = false;
 }

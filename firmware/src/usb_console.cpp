@@ -39,6 +39,7 @@ size_t UsbConsole::write(const uint8_t *buf, size_t len) {
     uint32_t n = usb_serial_jtag_ll_write_txfifo(buf + done, len - done);
     if (n) {
       done += n;
+      pending_ = true;
       stalled_ = false;
       waitFrom = millis();
       continue;
@@ -51,12 +52,27 @@ size_t UsbConsole::write(const uint8_t *buf, size_t len) {
     }
     delay(1);
   }
-  usb_serial_jtag_ll_txfifo_flush();
+  // Send at line ends; partial lines go out from poll(). Sending a packet
+  // per write() made byte-wise writers (ArduinoJson) crawl.
+  if (len && buf[len - 1] == '\n') sendPending();
   xSemaphoreGive(txLock_);
   return len;
 }
 
+void UsbConsole::sendPending() {
+  if (!pending_) return;
+  usb_serial_jtag_ll_txfifo_flush();
+  pending_ = false;
+}
+
+void UsbConsole::poll() {
+  if (!pending_ || !txLock_ || xSemaphoreTake(txLock_, 0) != pdTRUE) return;
+  sendPending();
+  xSemaphoreGive(txLock_);
+}
+
 void UsbConsole::flush() {
+  poll();
   uint32_t from = millis();
   while (!stalled_ && !usb_serial_jtag_ll_txfifo_writable() && millis() - from < TX_WAIT_MS) delay(1);
 }

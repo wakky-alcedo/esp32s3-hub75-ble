@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
-const effectNames = ['plasma', 'fire', 'matrix', 'life', 'stars', 'noise', 'rainbow'];
 const effectLabels = {
   'plasma': 'プラズマ',
   'fire': '炎',
@@ -13,6 +12,28 @@ const effectLabels = {
   'stars': '星空',
   'noise': 'ノイズ',
   'rainbow': '虹',
+  // Microphone
+  'spectrum': '♪ スペクトラム',
+  'radial': '♪ 放射',
+  'waterfall': '♪ ウォーターフォール',
+  // Tilt / shake
+  'sand': '傾き: 砂',
+  'liquid': '傾き: 水',
+  'flow': '傾き: 流れ',
+  'marbles': '傾き: ビー玉',
+  'bubbles': '傾き: 泡',
+};
+final effectNames = effectLabels.keys.toList();
+
+/// Effects that react to the microphones / the tilt sensor.
+const micEffects = {'spectrum', 'radial', 'waterfall'};
+const motionEffects = {'sand', 'liquid', 'flow', 'marbles', 'bubbles'};
+
+const sensorPageLabels = {
+  'env': '温度・湿度',
+  'accel': '加速度',
+  'gyro': '角速度',
+  'sound': '音の大きさ',
 };
 const paletteNames = ['rainbow', 'heat', 'lava', 'cloud', 'ocean', 'forest', 'party'];
 
@@ -30,6 +51,7 @@ const itemTypeLabels = {
   'clock': '時計',
   'countdown': 'タイマー',
   'effect': 'エフェクト',
+  'sensors': 'センサー値',
 };
 
 /// One playlist entry as edited in the app. [p] holds the editable source
@@ -89,6 +111,14 @@ class ContentItem {
         };
       case 'effect':
         return {'effect': 'plasma', 'params': <String, dynamic>{}, 'duration': 10000};
+      case 'sensors':
+        return {
+          'pages': ['env', 'accel', 'gyro', 'sound'],
+          'pageMs': 3000,
+          'color': 0xFFFFFFFF,
+          'headColor': 0xFFFFC828,
+          'duration': 0, // 0 = each page once
+        };
     }
     return {};
   }
@@ -112,6 +142,8 @@ class ContentItem {
         };
       case 'effect':
         return effectLabels[p['effect']] ?? p['effect'] as String;
+      case 'sensors':
+        return (p['pages'] as List).map((e) => sensorPageLabels[e] ?? e).join('・');
     }
     return '';
   }
@@ -188,3 +220,21 @@ class Library extends ChangeNotifier {
     return dst.path;
   }
 }
+
+/// Ready-made presets for the on-board sensors.
+final presetTemplates = <String, Preset Function()>{
+  'センサー値': () => Preset(name: 'センサー', items: [ContentItem('sensors', {})]),
+  '音のビジュアライザー': () => Preset(name: '音', items: [
+        ContentItem('effect', {'effect': 'spectrum', 'duration': 20000}),
+        ContentItem('effect', {'effect': 'spectrum', 'params': {'style': 'mirror'}, 'duration': 20000}),
+        ContentItem('effect', {'effect': 'radial', 'duration': 20000}),
+        ContentItem('effect', {'effect': 'waterfall', 'duration': 20000}),
+      ]),
+  '傾きアート': () => Preset(name: '傾き', items: [
+        ContentItem('effect', {'effect': 'sand', 'duration': 30000}),
+        ContentItem('effect', {'effect': 'liquid', 'duration': 30000}),
+        ContentItem('effect', {'effect': 'flow', 'duration': 20000}),
+        ContentItem('effect', {'effect': 'marbles', 'duration': 20000}),
+        ContentItem('effect', {'effect': 'bubbles', 'duration': 20000}),
+      ]),
+};

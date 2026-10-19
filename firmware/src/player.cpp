@@ -175,4 +175,5 @@ void Player::statusJson(JsonObject o) const {
   o["speed"] = gConfig.speed;
   o["mA"] = gDisplay.estimatedMa();
   o["powerScale"] = gDisplay.powerScale();
+  o["uptime"] = millis() / 1000;
 }

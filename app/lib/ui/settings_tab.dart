@@ -19,6 +19,23 @@ class _SettingsTabState extends State<SettingsTab> {
   };
   late String name = app.config['name'] as String? ?? '';
   late int volume = app.config['volume'] as int? ?? 60;
+  late int tempOffset10 = app.config['tempOffset10'] as int? ?? 0;
+  late int micGain = app.config['micGain'] as int? ?? 24;
+  Map<String, dynamic>? sensors;
+
+  Future<void> _readSensors() async {
+    final r = await app.run('sensors');
+    if (r != null && mounted) setState(() => sensors = Map<String, dynamic>.from(r['sensors'] as Map));
+  }
+
+  Future<void> _calibrateImu() async {
+    final r = await app.run('imu_calibrate');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(r?['ok'] == true ? '今の向きを「下」として覚えました' : 'パネルを立てた状態で押してください'),
+    ));
+    await app.refresh();
+  }
 
   bool get _layoutDirty {
     final cur = app.config['panel'] as Map? ?? {};
@@ -170,6 +187,42 @@ class _SettingsTabState extends State<SettingsTab> {
           ),
         ]),
         const Divider(height: 32),
+        Text('センサー', style: Theme.of(context).textTheme.titleMedium),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('今の値'),
+          subtitle: Text(sensors == null
+              ? '更新ボタンで読み込みます'
+              : '温度 ${sensors!['tempC']}℃  湿度 ${sensors!['humidity']}%  チップ ${sensors!['chipC']}℃\n'
+                  '加速度 ${(sensors!['acc'] as List).join(' / ')} g'),
+          trailing: IconButton(tooltip: '更新', onPressed: _readSensors, icon: const Icon(Icons.refresh)),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('傾きの向きを合わせる'),
+          subtitle: const Text('パネルをいつもの向きに立てて押すと、その向きを「下」として覚えます'),
+          trailing: OutlinedButton(onPressed: _calibrateImu, child: const Text('合わせる')),
+        ),
+        IntSlider(
+          label: '温度の補正',
+          value: tempOffset10,
+          min: -150,
+          max: 50,
+          format: (v) => '${v > 0 ? '+' : ''}${(v / 10).toStringAsFixed(1)}℃',
+          onChanged: (v) => setState(() => tempOffset10 = v),
+          onChangeEnd: (v) => app.setConfig({'tempOffset10': v}),
+        ),
+        const Text('※ 基板の熱で高めに出るため、室温計と比べて合わせてください', style: TextStyle(fontSize: 12)),
+        IntSlider(
+          label: 'マイク感度',
+          value: micGain,
+          min: 0,
+          max: 37,
+          format: (v) => '${v}dB',
+          onChanged: (v) => setState(() => micGain = v),
+          onChangeEnd: (v) => app.setConfig({'micGain': v}),
+        ),
+        const Divider(height: 32),
         Text('本体', style: Theme.of(context).textTheme.titleMedium),
         Row(children: [
           Expanded(
@@ -195,7 +248,10 @@ class _SettingsTabState extends State<SettingsTab> {
             '解像度 ${app.width}x${app.height}\n'
             '保存領域 ${((app.info['fsUsed'] as int? ?? 0) / 1024).round()}KB / '
             '${((app.info['fsTotal'] as int? ?? 0) / 1024 / 1024).toStringAsFixed(1)}MB\n'
-            'RTC ${app.info['rtc'] == true ? 'あり' : 'なし'}',
+            'RTC ${app.info['rtc'] == true ? 'あり' : 'なし'}  '
+            'マイク ${app.info['mic'] == true ? 'あり' : 'なし'}  '
+            'センサー ${app.info['sensors'] == true ? 'あり' : 'なし'}\n'
+            'SDカード ${(app.info['sd'] as Map?)?['mounted'] == true ? '${(((app.info['sd'] as Map)['total'] as int) / 1e9).toStringAsFixed(1)}GB' : 'なし'}',
           ),
         ),
         Wrap(spacing: 8, children: [

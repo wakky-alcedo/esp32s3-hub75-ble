@@ -1,7 +1,7 @@
 #pragma once
 #include <ArduinoJson.h>
 
-static const char *FW_VERSION = "0.2.0";
+static const char *FW_VERSION = "0.3.0";
 static const int PROTOCOL_VERSION = 1;
 
 // Executes one JSON command ({"cmd": "...", "id": n, ...}) and fills resp.
@@ -14,3 +14,6 @@ extern volatile bool gRebootRequested;
 extern volatile bool gBootloaderRequested;
 // Hook for BLE bond clearing (set by the BLE module).
 extern void (*gClearBondsHook)();
+// Why the chip last started (ESP32 RESET_REASON; for a recovered partial
+// reset, the reason that triggered it).
+extern int gBootReason;

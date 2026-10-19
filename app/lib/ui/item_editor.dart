@@ -140,7 +140,7 @@ class _ItemEditorState extends State<ItemEditor> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (item.type != 'effect')
+          if (item.type != 'effect' && item.type != 'sensors')
             LedPreview(
               width: widget.width,
               height: widget.height,
@@ -163,6 +163,7 @@ class _ItemEditorState extends State<ItemEditor> {
             'clock' => _clockFields(),
             'countdown' => _countdownFields(),
             'effect' => _effectFields(),
+            'sensors' => _sensorsFields(),
             _ => <Widget>[],
           },
           const Divider(height: 32),
@@ -453,6 +454,75 @@ class _ItemEditorState extends State<ItemEditor> {
         IntSlider(label: '世代の間隔', value: params['stepMs'] as int? ?? 100, min: 30, max: 500, format: (v) => '${v}ms', onChanged: (v) => setParam('stepMs', v)),
       if (effect == 'rainbow')
         IntSlider(label: '細かさ', value: params['density'] as int? ?? 4, min: 1, max: 16, onChanged: (v) => setParam('density', v)),
+      if (effect == 'spectrum')
+        ChoiceField(
+          label: '形',
+          value: params['style'] as String? ?? 'bars',
+          options: const {'bars': '下から伸びる', 'mirror': '上下対称'},
+          onChanged: (v) => setParam('style', v),
+        ),
+      if (effect == 'waterfall')
+        ChoiceField(
+          label: '色',
+          value: params['palette'] as String? ?? 'heat',
+          options: const {'heat': '炎', 'ocean': '海'},
+          onChanged: (v) => setParam('palette', v),
+        ),
+      if (effect == 'sand' || effect == 'liquid')
+        IntSlider(
+          label: '量',
+          value: params['fill'] as int? ?? (effect == 'sand' ? 40 : 50),
+          min: 10,
+          max: 80,
+          format: (v) => '$v%',
+          onChanged: (v) => setParam('fill', v),
+        ),
+      if (effect == 'flow')
+        IntSlider(label: '粒の数', value: params['count'] as int? ?? (widget.width * widget.height ~/ 12), min: 16, max: 600, onChanged: (v) => setParam('count', v)),
+      if (effect == 'marbles')
+        IntSlider(label: '玉の数', value: params['count'] as int? ?? 8, min: 1, max: 24, onChanged: (v) => setParam('count', v)),
+      if (micEffects.contains(effect))
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text('本体のマイクで拾った音に合わせて動きます', style: TextStyle(fontSize: 12)),
+        ),
+      if (motionEffects.contains(effect))
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text('本体の傾きと揺れに合わせて動きます。向きが合わないときは「設定 → センサー」で合わせてください',
+              style: TextStyle(fontSize: 12)),
+        ),
+    ];
+  }
+
+  List<Widget> _sensorsFields() {
+    final pages = List<String>.from(p['pages'] as List);
+    return [
+      const Text('表示するページ（順番に切り替わります）'),
+      Wrap(spacing: 8, children: [
+        for (final e in sensorPageLabels.entries)
+          FilterChip(
+            label: Text(e.value),
+            selected: pages.contains(e.key),
+            onSelected: (on) {
+              final next = [
+                for (final k in sensorPageLabels.keys)
+                  if (k == e.key ? on : pages.contains(k)) k,
+              ];
+              if (next.isNotEmpty) _set('pages', next);
+            },
+          ),
+      ]),
+      IntSlider(
+        label: '切り替え',
+        value: (p['pageMs'] as int) ~/ 1000,
+        min: 1,
+        max: 20,
+        format: (v) => '$v秒ごと',
+        onChanged: (v) => _set('pageMs', v * 1000),
+      ),
+      ColorField(label: '数値の色', value: p['color'] as int, onChanged: (v) => _set('color', v)),
+      ColorField(label: '見出しの色', value: p['headColor'] as int, onChanged: (v) => _set('headColor', v)),
     ];
   }
 
@@ -461,6 +531,7 @@ class _ItemEditorState extends State<ItemEditor> {
       'text' => p['mode'] == 'scroll',
       'gif' => true,
       'countdown' => p['mode'] == 'timer',
+      'sensors' => true,
       _ => false,
     };
     final value = p['duration'] as int? ?? 0;
@@ -473,6 +544,7 @@ class _ItemEditorState extends State<ItemEditor> {
           ? switch (item.type) {
               'gif' => 'ループ回数',
               'countdown' => '最後まで',
+              'sensors' => '全ページを1回',
               _ => '繰り返し回数',
             }
           : '$v秒',

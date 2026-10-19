@@ -5,14 +5,18 @@
 #include "display.h"
 #include "effects.h"
 #include "fsutil.h"
+#include "mic.h"
 #include "player.h"
 #include "rtc.h"
+#include "sdcard.h"
+#include "sensors.h"
 #include "sound.h"
 #include "transfer.h"
 
 volatile bool gRebootRequested = false;
 volatile bool gBootloaderRequested = false;
 void (*gClearBondsHook)() = nullptr;
+int gBootReason = 0;
 
 static void fail(JsonDocument &resp, const char *err) {
   resp["ok"] = false;
@@ -29,7 +33,12 @@ static void infoJson(JsonObject o) {
   o["fsUsed"] = LittleFS.usedBytes();
   o["rtc"] = rtcPresent();
   o["sound"] = soundPresent();
+  o["mic"] = micPresent();
+  sdJson(o["sd"].to<JsonObject>());
+  SensorData sd = sensorsGet();
+  o["sensors"] = sd.imuOk || sd.envOk;
   o["time"] = (int64_t)time(nullptr);
+  o["bootReason"] = gBootReason;
   o["effects"] = effectNames();
   JsonArray presets = o["presets"].to<JsonArray>();
   for (int i = 0; i < MAX_PRESETS; i++) {
@@ -45,6 +54,20 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
 
   if (!strcmp(cmd, "info")) {
     infoJson(resp["info"].to<JsonObject>());
+  } else if (!strcmp(cmd, "sensors")) {
+    sensorsJson(resp["sensors"].to<JsonObject>());
+  } else if (!strcmp(cmd, "mic")) {
+    micJson(resp["mic"].to<JsonObject>());
+  } else if (!strcmp(cmd, "mic_sim")) {
+    micSimulate(req["ms"] | 10000u);
+  } else if (!strcmp(cmd, "sensors_sim")) {
+    JsonArrayConst g = req["grav"];
+    sensorsSimulate(g[0] | 0.0f, g[1] | 1.0f, g[2] | 0.0f, req["shake"] | 0.0f, req["ms"] | 10000u);
+  } else if (!strcmp(cmd, "imu_calibrate")) {
+    // Hold the panel the way it is normally mounted, then send this.
+    if (!sensorsCalibrateDown()) return fail(resp, "panel is lying flat");
+    gConfig.save();
+    resp["imuRotation"] = gConfig.imuRotation;
   } else if (!strcmp(cmd, "status")) {
     gPlayer.statusJson(resp["status"].to<JsonObject>());
   } else if (!strcmp(cmd, "get_config")) {
@@ -54,6 +77,7 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
     gConfig.fromJson(req["config"], restart);
     gDisplay.setBrightness(gConfig.brightness);
     if (!restart) gDisplay.applyOrientation(gConfig.panel);
+    micApplyGain();
     gConfig.save();
     resp["reboot"] = restart;
     if (restart) gRebootRequested = true;
@@ -99,19 +123,56 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
     // After uploading /presets/N.json via the file transfer.
     gPlayer.presetChanged(req["index"] | -1);
   } else if (!strcmp(cmd, "list_files")) {
-    const char *dir = req["dir"] | "/assets";
+    String local;
+    fs::FS *fs = fsFor(req["dir"] | "/assets", local);
+    if (!fs) return fail(resp, "no sd card");
     JsonArray files = resp["files"].to<JsonArray>();
-    File d = LittleFS.open(dir);
+    File d = fs->open(local);
     if (d && d.isDirectory()) {
       for (File f = d.openNextFile(); f; f = d.openNextFile()) {
         JsonObject e = files.add<JsonObject>();
         e["name"] = f.name();
         e["size"] = f.size();
+        if (f.isDirectory()) e["dir"] = true;
       }
     }
   } else if (!strcmp(cmd, "delete_file")) {
     const char *path = req["path"] | "";
-    if (!fsValidPath(path) || !LittleFS.remove(path)) return fail(resp, "delete failed");
+    String local;
+    fs::FS *fs = fsValidPath(path) ? fsFor(path, local) : nullptr;
+    if (!fs || !(fs->remove(local) || fs->rmdir(local))) return fail(resp, "delete failed");
+  } else if (!strcmp(cmd, "read_file")) {
+    // Returns up to "length" bytes (max 3072) from "offset" as base64.
+    const char *path = req["path"] | "";
+    String local;
+    fs::FS *fs = fsValidPath(path) ? fsFor(path, local) : nullptr;
+    File f = fs ? fs->open(local, "r") : File();
+    if (!f || f.isDirectory()) return fail(resp, "not found");
+    uint32_t offset = req["offset"] | 0u;
+    size_t len = min<size_t>(req["length"] | 3072u, 3072);
+    std::unique_ptr<uint8_t[]> buf(new uint8_t[len]);
+    f.seek(offset);
+    size_t got = f.read(buf.get(), len);
+    std::unique_ptr<uint8_t[]> b64(new uint8_t[got * 4 / 3 + 8]);
+    size_t outLen = 0;
+    mbedtls_base64_encode(b64.get(), got * 4 / 3 + 8, &outLen, buf.get(), got);
+    resp["size"] = f.size();
+    resp["offset"] = offset;
+    resp["data"] = String((const char *)b64.get(), outLen);
+  } else if (!strcmp(cmd, "snapshot")) {
+    // The last rendered frame as base64 RGB565 (little endian), for debugging.
+    GFXcanvas16 &c = gDisplay.canvas();
+    size_t n = (size_t)c.width() * c.height() * 2, cap = n * 4 / 3 + 8, outLen = 0;
+    uint8_t *b64 = (uint8_t *)ps_malloc(cap);
+    if (!b64) return fail(resp, "no memory");
+    mbedtls_base64_encode(b64, cap, &outLen, (const uint8_t *)c.getBuffer(), n);
+    resp["w"] = c.width();
+    resp["h"] = c.height();
+    resp["data"] = String((const char *)b64, outLen);
+    free(b64);
+  } else if (!strcmp(cmd, "sd_mount")) {
+    sdBegin();
+    sdJson(resp["sd"].to<JsonObject>());
   } else if (!strcmp(cmd, "file_begin")) {
     String err;
     if (!gReceiver.begin(req["path"] | "", req["size"] | 0u, req["crc"] | 0u, err)) return fail(resp, err.c_str());
