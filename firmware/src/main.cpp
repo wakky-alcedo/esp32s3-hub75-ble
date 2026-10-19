@@ -15,6 +15,7 @@
 #include "rtc.h"
 #include "sound.h"
 #include "trace.h"
+#include "usb_console.h"
 
 static const uint32_t FRAME_MS = 16;
 
@@ -48,7 +49,7 @@ static void loopWatchdogFeed() { rwdtArm(150000 * 8); }
 // downloader never feeds it, so the chip reset-looped every ~13ms.)
 [[noreturn]] static void fullReset(bool downloadMode) {
   gDisplay.end();
-  Serial.flush();
+  Console.flush();
   delay(100);
   if (downloadMode) {
     periph_module_reset(PERIPH_LCD_CAM_MODULE);
@@ -66,8 +67,8 @@ static String sLine;
 
 // One JSON command per line, one JSON response per line.
 static void pollSerial() {
-  while (Serial.available()) {
-    char ch = Serial.read();
+  while (Console.available()) {
+    char ch = Console.read();
     if (ch == '\r') continue;
     if (ch != '\n') {
       if (sLine.length() < 8192) sLine += ch;
@@ -83,8 +84,8 @@ static void pollSerial() {
     } else {
       handleCommand(req.as<JsonObjectConst>(), resp);
     }
-    serializeJson(resp, Serial);
-    Serial.println();
+    serializeJson(resp, Console);
+    Console.println();
   }
 }
 
@@ -177,25 +178,23 @@ void setup() {
   // Left set by a "bootloader" command whose flash was aborted.
   REG_WRITE(RTC_CNTL_OPTION1_REG, 0);
 
-  // file_data lines exceed the default 256 byte USB CDC buffer.
-  Serial.setRxBufferSize(8192);
-  Serial.begin(115200);
+  Console.begin();
   delay(200);
-  Serial.printf("\n[boot] LED Display Controller %s\n", FW_VERSION);
-  Serial.printf("[boot] reset reason %d\n", resetReason);
+  Console.printf("\n[boot] LED Display Controller %s\n", FW_VERSION);
+  Console.printf("[boot] reset reason %d\n", resetReason);
   if ((sRecoveredFrom & 0xFFFF0000u) == RECOVERED_MAGIC) {
-    Serial.printf("[boot] recovered from partial reset (reason %u)\n", sRecoveredFrom & 0xFFFF);
+    Console.printf("[boot] recovered from partial reset (reason %u)\n", sRecoveredFrom & 0xFFFF);
   }
   sRecoveredFrom = 0;
-  if (resetReason != 1) Serial.printf("[boot] last trace: main=%u ble=%u\n", prevMain, prevBle);
-  Serial.printf("[boot] PSRAM %u bytes free, heap %u\n", ESP.getFreePsram(), ESP.getFreeHeap());
+  if (resetReason != 1) Console.printf("[boot] last trace: main=%u ble=%u\n", prevMain, prevBle);
+  Console.printf("[boot] PSRAM %u bytes free, heap %u\n", ESP.getFreePsram(), ESP.getFreeHeap());
 
   StateLock::init();
   TRACE_MAIN(2);
-  if (!fsBegin()) Serial.println("[boot] LittleFS mount failed");
-  else Serial.printf("[boot] LittleFS %u/%u bytes used\n", LittleFS.usedBytes(), LittleFS.totalBytes());
+  if (!fsBegin()) Console.println("[boot] LittleFS mount failed");
+  else Console.printf("[boot] LittleFS %u/%u bytes used\n", LittleFS.usedBytes(), LittleFS.totalBytes());
   if (!gConfig.load()) {
-    Serial.println("[boot] no config, using defaults");
+    Console.println("[boot] no config, using defaults");
     gConfig.save();
   }
   TRACE_MAIN(3);
@@ -205,14 +204,14 @@ void setup() {
   bleBegin(gConfig.name.c_str());
   TRACE_MAIN(5);
   if (!gDisplay.begin(gConfig.panel)) {
-    Serial.println("[boot] display init failed");
+    Console.println("[boot] display init failed");
   }
   gDisplay.setBrightness(gConfig.brightness);
   TRACE_MAIN(6);
   sButton.begin(0);
   gPlayer.begin();
   TRACE_MAIN(7);
-  Serial.println("[boot] ready");
+  Console.println("[boot] ready");
 }
 
 void loop() {
@@ -247,7 +246,7 @@ void loop() {
 
   TRACE_MAIN(15);
   if (start - statAt >= 10000) {
-    Serial.printf("[stat] %u fps, frame %u us, est %u mA, scale %u, heap %u\n", frames * 1000 / (start - statAt),
+    Console.printf("[stat] %u fps, frame %u us, est %u mA, scale %u, heap %u\n", frames * 1000 / (start - statAt),
                   frames ? busyUs / frames : 0, gDisplay.estimatedMa(), gDisplay.powerScale(), ESP.getFreeHeap());
     statAt = start;
     frames = 0;

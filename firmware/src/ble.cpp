@@ -4,6 +4,7 @@
 #include "player.h"
 #include "trace.h"
 #include "transfer.h"
+#include "usb_console.h"
 
 #define SERVICE_UUID "6e4c0001-7b3a-4f2e-9a61-4c45442d4453"
 #define CONTROL_UUID "6e4c0002-7b3a-4f2e-9a61-4c45442d4453"
@@ -35,14 +36,14 @@ static void sendFragmented(const String &text) {
 
 static void clearBonds() {
   NimBLEDevice::deleteAllBonds();
-  Serial.println("[ble] bonds cleared");
+  Console.println("[ble] bonds cleared");
 }
 
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer *s, ble_gap_conn_desc *desc) override {
     TRACE_BLE(100);
     sConnected = true;
-    Serial.println("[ble] connected");
+    Console.println("[ble] connected");
     TRACE_BLE(101);
     // Ask for a faster connection interval: 7.5-15ms, no latency, 4s timeout.
     s->updateConnParams(desc->conn_handle, 6, 12, 0, 400);
@@ -52,7 +53,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     TRACE_BLE(110);
     sConnected = false;
     sMtu = 23;
-    Serial.println("[ble] disconnected");
+    Console.println("[ble] disconnected");
     {
       StateLock lock;
       gPlayer.setPinOverlay("");
@@ -63,21 +64,21 @@ class ServerCallbacks : public NimBLEServerCallbacks {
   }
   void onMTUChange(uint16_t mtu, ble_gap_conn_desc *) override {
     sMtu = mtu;
-    Serial.printf("[ble] mtu %u\n", mtu);
+    Console.printf("[ble] mtu %u\n", mtu);
   }
   uint32_t onPassKeyRequest() override {
     // A fresh PIN per pairing attempt, shown on the panel.
     uint32_t pin = esp_random() % 1000000;
     char text[8];
     snprintf(text, sizeof(text), "%06u", pin);
-    Serial.printf("[ble] pairing PIN %s\n", text);
+    Console.printf("[ble] pairing PIN %s\n", text);
     StateLock lock;
     gPlayer.setPinOverlay(text);
     return pin;
   }
   void onAuthenticationComplete(ble_gap_conn_desc *desc) override {
     TRACE_BLE(130);
-    Serial.printf("[ble] auth complete: encrypted=%d bonded=%d\n", desc->sec_state.encrypted, desc->sec_state.bonded);
+    Console.printf("[ble] auth complete: encrypted=%d bonded=%d\n", desc->sec_state.encrypted, desc->sec_state.bonded);
     StateLock lock;
     gPlayer.setPinOverlay("");
     if (!desc->sec_state.encrypted) gPlayer.toast("PAIR FAILED", 2000);
@@ -153,7 +154,7 @@ void bleBegin(const char *name) {
   adv->addServiceUUID(SERVICE_UUID);
   adv->setScanResponse(true);
   adv->start();
-  Serial.printf("[ble] advertising as '%s' (%d bond(s))\n", name, NimBLEDevice::getNumBonds());
+  Console.printf("[ble] advertising as '%s' (%d bond(s))\n", name, NimBLEDevice::getNumBonds());
 }
 
 bool bleConnected() { return sConnected; }

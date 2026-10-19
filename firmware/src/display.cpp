@@ -1,6 +1,7 @@
 #include "display.h"
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include "color.h"
+#include "usb_console.h"
 
 Display gDisplay;
 
@@ -23,7 +24,7 @@ bool Display::begin(const PanelConfig &cfg) {
     mx.double_buff = false;
     dma_ = new MatrixPanel_I2S_DMA(mx);
     if (!dma_->begin()) {
-      Serial.println("[display] DMA allocation failed");
+      Console.println("[display] DMA allocation failed");
       return false;
     }
   }
@@ -34,7 +35,7 @@ bool Display::begin(const PanelConfig &cfg) {
   h_ = swap ? pw : ph;
   canvas_ = new GFXcanvas16(w_, h_);
   if (!canvas_->getBuffer()) {
-    Serial.println("[display] canvas allocation failed");
+    Console.println("[display] canvas allocation failed");
     return false;
   }
   buildMap(cfg);
@@ -42,7 +43,7 @@ bool Display::begin(const PanelConfig &cfg) {
   dma_->clearScreen();
   dma_->flipDMABuffer();
   dma_->clearScreen();
-  Serial.printf("[display] %dx%d (%d panel(s) %dx%d, dbuf=%d)\n", w_, h_, panelCount_,
+  Console.printf("[display] %dx%d (%d panel(s) %dx%d, dbuf=%d)\n", w_, h_, panelCount_,
                 cfg.panelW, cfg.panelH, doubleBuffered_);
   return true;
 }

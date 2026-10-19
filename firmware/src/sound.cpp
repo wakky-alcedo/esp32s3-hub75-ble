@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <driver/i2s.h>
 #include "config.h"
+#include "usb_console.h"
 
 // Waveshare ESP32-S3-RGB-Matrix wiring (from its 09_Music_Player example).
 static const int PIN_MCLK = 12, PIN_BCLK = 43, PIN_LRCK = 38, PIN_DOUT = 21;
@@ -144,7 +145,7 @@ bool soundBegin() {
   digitalWrite(PIN_PA_ENABLE, LOW);
   Wire.beginTransmission(ES8311_ADDR);
   if (Wire.endTransmission() != 0) {
-    Serial.println("[sound] ES8311 not found");
+    Console.println("[sound] ES8311 not found");
     return false;
   }
 
@@ -160,7 +161,7 @@ bool soundBegin() {
   cfg.tx_desc_auto_clear = true;  // outputs silence whenever nothing is queued
   cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
   if (i2s_driver_install(PORT, &cfg, 0, nullptr) != ESP_OK) {
-    Serial.println("[sound] I2S install failed");
+    Console.println("[sound] I2S install failed");
     return false;
   }
   i2s_pin_config_t pins = {};
@@ -172,14 +173,14 @@ bool soundBegin() {
   i2s_set_pin(PORT, &pins);
 
   if (!codecInit()) {
-    Serial.println("[sound] ES8311 init failed");
+    Console.println("[sound] ES8311 init failed");
     i2s_driver_uninstall(PORT);
     return false;
   }
   sQueue = xQueueCreate(4, sizeof(Sound));
   xTaskCreatePinnedToCore(soundTask, "sound", 4096, nullptr, 3, nullptr, 0);
   sPresent = true;
-  Serial.println("[sound] ES8311 ready");
+  Console.println("[sound] ES8311 ready");
   return true;
 }
 

@@ -1,6 +1,7 @@
 #include "assets.h"
 #include "color.h"
 #include "fsutil.h"
+#include "usb_console.h"
 
 void Bitmap::release() {
   free(data);
@@ -52,7 +53,7 @@ bool Bitmap::load(const char *path) {
   }
   if (!ok) {
     free(file);
-    Serial.printf("[assets] bad bitmap %s\n", path);
+    Console.printf("[assets] bad bitmap %s\n", path);
   }
   return ok;
 }

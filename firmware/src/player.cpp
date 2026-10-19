@@ -3,6 +3,7 @@
 #include "config.h"
 #include "display.h"
 #include "fsutil.h"
+#include "usb_console.h"
 
 Player gPlayer;
 
@@ -41,7 +42,7 @@ bool Player::selectPreset(int index, bool persist) {
   if (demo_) text = DEMO_PRESET;
   doc_.clear();
   if (deserializeJson(doc_, text) || !doc_["items"].is<JsonArrayConst>() || doc_["items"].size() == 0) {
-    Serial.printf("[player] preset %d invalid, using demo\n", index);
+    Console.printf("[player] preset %d invalid, using demo\n", index);
     deserializeJson(doc_, DEMO_PRESET);
     demo_ = true;
   }
@@ -55,7 +56,7 @@ bool Player::selectPreset(int index, bool persist) {
     gConfig.lastPreset = index;
     gConfig.save();
   }
-  Serial.printf("[player] preset %d (%s, %d items)\n", index, demo_ ? "demo" : "stored", items_.size());
+  Console.printf("[player] preset %d (%s, %d items)\n", index, demo_ ? "demo" : "stored", items_.size());
   return true;
 }
 

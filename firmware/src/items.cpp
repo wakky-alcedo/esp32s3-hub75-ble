@@ -6,6 +6,7 @@
 #include "config.h"
 #include "fsutil.h"
 #include "sound.h"
+#include "usb_console.h"
 
 static String assetPath(const char *name) {
   String p = "/assets/";
@@ -404,11 +405,11 @@ Item *createItem(JsonObjectConst def, int w, int h) {
   else if (!strcmp(type, "countdown")) item = new CountdownItem();
   else if (!strcmp(type, "effect")) item = new EffectItem();
   if (!item) {
-    Serial.printf("[items] unknown type '%s'\n", type);
+    Console.printf("[items] unknown type '%s'\n", type);
     return nullptr;
   }
   if (!item->load(def, w, h)) {
-    Serial.printf("[items] failed to load '%s'\n", type);
+    Console.printf("[items] failed to load '%s'\n", type);
     delete item;
     return nullptr;
   }

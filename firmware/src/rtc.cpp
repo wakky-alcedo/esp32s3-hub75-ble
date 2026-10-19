@@ -1,4 +1,5 @@
 #include "rtc.h"
+#include "usb_console.h"
 #include <Wire.h>
 #include <sys/time.h>
 
@@ -27,7 +28,7 @@ bool rtcBegin() {
   Wire.beginTransmission(ADDR);
   sPresent = Wire.endTransmission() == 0;
   if (!sPresent) {
-    Serial.println("[rtc] not found");
+    Console.println("[rtc] not found");
     return false;
   }
   Wire.beginTransmission(ADDR);
@@ -37,7 +38,7 @@ bool rtcBegin() {
   for (int i = 0; i < 7; i++) r[i] = Wire.read();
   if (r[0] & 0x80) {
     // Oscillator stopped: power was lost, the stored time is meaningless.
-    Serial.println("[rtc] time invalid (oscillator stop flag)");
+    Console.println("[rtc] time invalid (oscillator stop flag)");
     return false;
   }
   int sec = bcd2bin(r[0] & 0x7F), min = bcd2bin(r[1] & 0x7F), hour = bcd2bin(r[2] & 0x3F);
@@ -45,7 +46,7 @@ bool rtcBegin() {
   time_t t = daysFromCivil(year, month, day) * 86400 + hour * 3600 + min * 60 + sec;
   struct timeval tv = {t, 0};
   settimeofday(&tv, nullptr);
-  Serial.printf("[rtc] %04d-%02d-%02d %02d:%02d:%02d UTC\n", year, month, day, hour, min, sec);
+  Console.printf("[rtc] %04d-%02d-%02d %02d:%02d:%02d UTC\n", year, month, day, hour, min, sec);
   return true;
 }
 

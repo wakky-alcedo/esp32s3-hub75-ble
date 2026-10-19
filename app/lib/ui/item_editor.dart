@@ -67,7 +67,7 @@ class _ItemEditorState extends State<ItemEditor> {
         case 'clock':
         case 'countdown':
           final label = p['label'] as String? ?? '';
-          final digits = item.type == 'clock' ? (p['format'] == 'HMS' ? '12:34:56' : '12:34') : '05:00';
+          final digits = item.type == 'clock' ? (p['format'] == 'HMS' ? '12:34:56' : '12:34') : _countdownStart();
           r = await _digitsPreview(label, digits, w, h);
       }
       if (seq != _previewSeq || !mounted) return;
@@ -79,6 +79,18 @@ class _ItemEditorState extends State<ItemEditor> {
       if (seq != _previewSeq || !mounted) return;
       setState(() => _previewError = '$e');
     }
+  }
+
+  // What the countdown shows when it comes on screen, formatted like the firmware.
+  String _countdownStart() {
+    final secs = switch (p['mode']) {
+      'timer' => p['seconds'] as int,
+      'stopwatch' => 0,
+      _ => DateTime.fromMillisecondsSinceEpoch(p['target'] as int).difference(DateTime.now()).inSeconds,
+    }.clamp(0, 1 << 31);
+    String two(int v) => v.toString().padLeft(2, '0');
+    final hh = secs ~/ 3600, mm = secs ~/ 60 % 60, ss = secs % 60;
+    return hh > 0 ? '$hh:${two(mm)}:${two(ss)}' : '${two(mm)}:${two(ss)}';
   }
 
   // Approximation of the firmware layout: label on top, digits below.
