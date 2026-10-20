@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../model/content.dart';
 import '../state/app_state.dart';
+import 'files_tab.dart';
 import 'preset_editor.dart';
 import 'settings_tab.dart';
 import 'widgets.dart';
@@ -50,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
           body: switch (tab) {
             0 => app.connected ? _ControlTab() : _ConnectPanel(),
             1 => _PresetsTab(),
+            2 => app.connected ? FilesTab() : _ConnectPanel(),
             _ => app.connected ? SettingsTab() : _ConnectPanel(),
           },
           bottomNavigationBar: NavigationBar(
@@ -58,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
             destinations: const [
               NavigationDestination(icon: Icon(Icons.tune), label: '操作'),
               NavigationDestination(icon: Icon(Icons.playlist_play), label: 'プリセット'),
+              NavigationDestination(icon: Icon(Icons.folder), label: 'ファイル'),
               NavigationDestination(icon: Icon(Icons.settings), label: '設定'),
             ],
           ),

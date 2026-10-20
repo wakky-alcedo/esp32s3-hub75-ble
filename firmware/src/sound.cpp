@@ -2,6 +2,8 @@
 #include <Wire.h>
 #include <driver/i2s.h>
 #include "config.h"
+#include "fsutil.h"
+#include "music.h"
 #include "usb_console.h"
 
 // Waveshare ESP32-S3-RGB-Matrix wiring (from its 09_Music_Player example).
@@ -216,6 +218,41 @@ static void playNoise(const NoiseSpec &n, float amp) {
   });
 }
 
+// --- Music -----------------------------------------------------------------
+
+// Requests the task handles besides sounds.
+static const Sound CMD_MUSIC_PLAY = (Sound)200, CMD_MUSIC_STOP = (Sound)201;
+
+static SemaphoreHandle_t sMusicLock = nullptr;  // guards the Strings below
+static String sMusicReq;          // file asked for by musicPlay()
+static bool sMusicReqLoop = false;
+static String sMusicNow;          // file being played ("" = none), for status
+static volatile bool sMusicOn = false;
+
+static void setNowPlaying(const String &path) {
+  xSemaphoreTake(sMusicLock, portMAX_DELAY);
+  sMusicNow = path;
+  xSemaphoreGive(sMusicLock);
+  sMusicOn = path.length() > 0;
+}
+
+// Plays the next slice of music, about 5ms. Returns false at the end.
+static bool playMusicSlice(MusicDecoder &dec) {
+  static const int FRAMES = 256;
+  int16_t buf[FRAMES * 2];
+  size_t n = dec.read(buf, FRAMES);
+  if (!n) return false;
+  // Mixed to mono for the single speaker, at the same loudness scale as the tones.
+  const int32_t amp = amplitude();
+  for (size_t i = 0; i < n; i++) {
+    int32_t m = ((int32_t)buf[i * 2] + buf[i * 2 + 1]) / 2;
+    buf[i * 2] = buf[i * 2 + 1] = (int16_t)(m * amp / 32768);
+  }
+  size_t written;
+  i2s_write(PORT, buf, n * 4, &written, portMAX_DELAY);
+  return true;
+}
+
 struct Request {
   Sound s;
   uint8_t level;
@@ -223,9 +260,29 @@ struct Request {
 
 static void soundTask(void *) {
   bool paOn = false;
+  MusicDecoder music;
+  String musicPath;
+  bool musicLoop = false;
   for (;;) {
     Request req;
-    if (xQueueReceive(sQueue, &req, paOn ? pdMS_TO_TICKS(PA_HOLD_MS) : portMAX_DELAY) != pdTRUE) {
+    const TickType_t wait = music.isOpen() ? 0 : paOn ? pdMS_TO_TICKS(PA_HOLD_MS) : portMAX_DELAY;
+    const bool got = xQueueReceive(sQueue, &req, wait) == pdTRUE;
+    if (got && req.s == CMD_MUSIC_PLAY) {
+      xSemaphoreTake(sMusicLock, portMAX_DELAY);
+      musicPath = sMusicReq;
+      musicLoop = sMusicReqLoop;
+      xSemaphoreGive(sMusicLock);
+      bool ok = music.open(musicPath.c_str());
+      Console.printf("[music] %s %s\n", ok ? "playing" : "cannot play", musicPath.c_str());
+      setNowPlaying(ok ? musicPath : String());
+      continue;
+    }
+    if (got && req.s == CMD_MUSIC_STOP) {
+      music.close();
+      setNowPlaying(String());
+      continue;
+    }
+    if (!got && !music.isOpen()) {
       digitalWrite(PIN_PA_ENABLE, LOW);
       paOn = false;
       continue;
@@ -236,6 +293,16 @@ static void soundTask(void *) {
       static const Tone SETTLE[] = {{0, 30}};  // let the amplifier come up
       playTones(SETTLE, 1);
     }
+    if (!got) {
+      if (playMusicSlice(music)) continue;
+      // End of the file: start over, or stop.
+      if (!musicLoop || !music.open(musicPath.c_str())) {
+        music.close();
+        setNowPlaying(String());
+      }
+      continue;
+    }
+    // A sound pauses the music while it plays.
     const float amp = amplitude() * req.level / 255.0f;
     switch (req.s) {
       case SOUND_TICK: playTones(TICK, sizeof(TICK) / sizeof(Tone)); break;
@@ -294,7 +361,8 @@ bool soundBegin() {
     return false;
   }
   sQueue = xQueueCreate(4, sizeof(Request));
-  xTaskCreatePinnedToCore(soundTask, "sound", 4096, nullptr, 3, nullptr, 0);
+  sMusicLock = xSemaphoreCreateMutex();
+  xTaskCreatePinnedToCore(soundTask, "sound", 8192, nullptr, 3, nullptr, 0);  // MP3 decoding needs the stack
   sPresent = true;
   Console.println("[sound] ES8311 ready");
   return true;
@@ -310,9 +378,34 @@ void soundPlay(Sound s) {
 
 void soundEffect(Sound s, uint8_t level) {
   if (!sPresent || s == SOUND_NONE || gConfig.volume == 0 || !level) return;
-  if (uxQueueMessagesWaiting(sQueue)) return;
+  if (sMusicOn || uxQueueMessagesWaiting(sQueue)) return;  // effect sounds would chop up the music
   Request req = {s, level};
   xQueueSend(sQueue, &req, 0);
+}
+
+bool musicPlay(const char *path, bool loop) {
+  if (!sPresent || !fsValidPath(path) || !musicFileSupported(path) || !fsExists(path)) return false;
+  xSemaphoreTake(sMusicLock, portMAX_DELAY);
+  sMusicReq = path;
+  sMusicReqLoop = loop;
+  xSemaphoreGive(sMusicLock);
+  Request req = {CMD_MUSIC_PLAY, 0};
+  return xQueueSend(sQueue, &req, pdMS_TO_TICKS(200)) == pdTRUE;
+}
+
+void musicStop() {
+  if (!sPresent) return;
+  Request req = {CMD_MUSIC_STOP, 0};
+  xQueueSend(sQueue, &req, pdMS_TO_TICKS(200));
+}
+
+bool musicPlaying() { return sMusicOn; }
+
+String musicNowPlaying() {
+  xSemaphoreTake(sMusicLock, portMAX_DELAY);
+  String p = sMusicNow;
+  xSemaphoreGive(sMusicLock);
+  return p;
 }
 
 Sound soundFromName(const char *name) {

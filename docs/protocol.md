@@ -26,7 +26,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | cmd | 引数 | 応答 |
 |---|---|---|
 | `info` | | `info`: fw, proto, name, width, height, fsTotal, fsUsed, rtc, sound, mic, sensors, sd{mounted, total, used}, time, bootReason（前回のリセット理由）, effects, presets[] |
-| `status` | | `status`: preset, demo, item, items, paused, standby, brightness, speed, mA, powerScale, uptime（秒） |
+| `status` | | `status`: preset, demo, item, items, paused, standby, brightness, speed, mA, powerScale, uptime（秒）, music（再生中の音楽のパス。止まっていれば無し） |
 | `get_config` / `set_config` | `config`（部分更新可） | `reboot`: 再起動が必要だったか（必要なら自動で再起動する） |
 | `brightness` | `value` 0-255, `save`（既定 true） | |
 | `speed` | `value` 10-400(%), `save` | |
@@ -44,6 +44,8 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | `file_status` | | `active`, `expected` |
 | `file_end` / `file_abort` | | `file_end` でサイズと CRC を検証し、確定する |
 | `sync_time` | `epoch`(UTC 秒), `tzOffsetMin` | RTC にも書き込む |
+| `music_play` | `path`（.mp3 / .wav。内蔵 `/music/...` または SD `/sd/...`）, `loop`（既定 false） | 再生中の音楽を置き換える。tick などの音が鳴る間は一時停止し、効果音は鳴らない |
+| `music_stop` | | |
 | `sound` | `name`: tick/beep/chime/alarm、効果音 clack/knock/rattle/splash/whoosh/fizz（既定 chime） | 試し鳴らし。音量は設定の `volume` |
 | `sensors` | | `sensors`: envOk, imuOk, tempC, humidity, chipC, acc[3](g), gyro[3](°/s), accRaw[3]（基板の軸）, shake（揺れ、g）, shakePeak（前回の読み出しからの最大値） |
 | `imu_calibrate` | | パネルをいつもの向きに立てて送ると、今の重力の向きを「下」として `imuRotation` を保存する。寝かせていると失敗 |
@@ -57,7 +59,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 - `file_nack`：Bulk のオフセットが飛んだ。`expected` から送り直す
 
 ## ファイル転送（BLE）
-1. `file_begin {path, size, crc}`。書ける場所は `/assets/*`、`/presets/*`、`/sd/*`（SD カード。途中のディレクトリは自動で作る）
+1. `file_begin {path, size, crc}`。書ける場所は `/assets/*`、`/presets/*`、`/music/*`、`/sd/*`（SD カード。途中のディレクトリは自動で作る）。パスは 160 バイトまで（内蔵メモリは 63 バイトまで）。アプリは画像・GIF を `/assets` か `/sd/led/assets`、音楽を `/music` か `/sd/music` に置く
 2. Bulk に `[u32 LE offset][data]` を順に送る
 3. 数チャンクごとに `file_status` で `expected` を確認する（フロー制御と抜けの検出）
 4. `file_end` → `ok` で確定する（一時ファイルから rename するので、途中で電源が落ちても元のファイルは壊れない）
@@ -76,7 +78,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 
 ### プリセット（`/presets/N.json`）
 ```json
-{"name": "...", "transition": "fade|cut", "items": [ ... ]}
+{"name": "...", "transition": "fade|cut", "bgm": "/sd/music/x.mp3", "items": [ ... ]}
 ```
 項目の共通フィールド：`type`、`duration`(ms、省略時は種別ごとの既定値または自然終了)、`bg`（`{"type":"color","color":"#000000"}` / `{"type":"effect","effect":"stars","params":{}}` / `{"type":"image","asset":"x.ldb"}`）
 

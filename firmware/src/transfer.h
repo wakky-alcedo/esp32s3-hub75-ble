@@ -17,7 +17,15 @@ class FileReceiver {
   const String &path() const { return path_; }
 
  private:
+  bool flush();
+
   File file_;
+  // Chunks arrive ~240 bytes at a time over BLE; writing them one by one to
+  // the SD card is slow, so they are collected and written in blocks.
+  static const size_t BUF_SIZE = 8192;
+  uint8_t *buf_ = nullptr;
+  size_t bufLen_ = 0;
+  bool writeFailed_ = false;
   fs::FS *fs_ = nullptr;
   String path_, local_;  // as requested / within fs_
   uint32_t size_ = 0, crc_ = 0, received_ = 0, running_ = 0;

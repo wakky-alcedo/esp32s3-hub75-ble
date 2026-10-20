@@ -22,6 +22,8 @@ class Player {
   // Re-reads the preset file if it is the one playing.
   void presetChanged(int index);
 
+  // Display standby; also stops music, and restarts the preset's BGM after.
+  void setStandby(bool on);
   void toast(const String &text, uint32_t ms = 1200);
   void setPinOverlay(const String &pin) { pin_ = pin; }
 
@@ -29,6 +31,7 @@ class Player {
 
  private:
   void startItem(int index);
+  void startBgm();
   void drawOverlay(GFXcanvas16 &c, const String &text);
 
   enum Phase { PLAYING, FADING_OUT, FADING_IN };
@@ -40,6 +43,7 @@ class Player {
   int index_ = 0;
   int pendingIndex_ = 0;
   bool fade_ = true;
+  bool bgmOwned_ = false;  // the music playing is this preset's bgm
   bool paused_ = false;
   bool demo_ = false;
   Phase phase_ = PLAYING;

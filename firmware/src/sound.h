@@ -31,3 +31,12 @@ void soundPlay(Sound s);
 void soundEffect(Sound s, uint8_t level);
 // "none" / "tick" / "beep" / "chime" / "alarm" / "clack" / ...; unknown names map to SOUND_NONE.
 Sound soundFromName(const char *name);
+
+// Music from an MP3 or WAV file on LittleFS or the SD card ("/sd/..."),
+// played to the end, or over and over with `loop`. Replaces whatever music
+// was playing. Tones (ticks, alarms) pause it while they sound; effect sounds
+// are muted during music. False when the file is missing or not playable.
+bool musicPlay(const char *path, bool loop);
+void musicStop();
+bool musicPlaying();
+String musicNowPlaying();  // "" when nothing plays

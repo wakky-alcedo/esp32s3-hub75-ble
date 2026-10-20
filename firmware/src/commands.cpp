@@ -98,7 +98,7 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
   } else if (!strcmp(cmd, "prev")) {
     gPlayer.prev();
   } else if (!strcmp(cmd, "standby")) {
-    gDisplay.setStandby(req["on"] | true);
+    gPlayer.setStandby(req["on"] | true);
   } else if (!strcmp(cmd, "preset")) {
     if (!gPlayer.selectPreset(req["index"] | -1)) fail(resp, "bad index");
   } else if (!strcmp(cmd, "get_preset")) {
@@ -206,6 +206,11 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
     // Test playback, e.g. from the volume setting.
     if (!soundPresent()) return fail(resp, "no sound");
     soundPlay(soundFromName(req["name"] | "chime"));
+  } else if (!strcmp(cmd, "music_play")) {
+    if (!soundPresent()) return fail(resp, "no sound");
+    if (!musicPlay(req["path"] | "", req["loop"] | false)) return fail(resp, "cannot play");
+  } else if (!strcmp(cmd, "music_stop")) {
+    musicStop();
   } else if (!strcmp(cmd, "clear_bonds")) {
     if (gClearBondsHook) gClearBondsHook();
   } else if (!strcmp(cmd, "reboot")) {

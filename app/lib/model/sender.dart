@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import '../ble/link.dart';
 import '../render/raster.dart';
 import 'content.dart';
+import 'storage.dart';
 
 String hexColor(int argb) => '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
 
@@ -15,7 +16,17 @@ String hexColor(int argb) => '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, 
 class DeviceItem {
   DeviceItem(this.json, this.assets);
   final Map<String, dynamic> json;
-  final Map<String, Uint8List> assets; // file name under /assets -> bytes
+  final Map<String, Uint8List> assets; // asset file name -> bytes
+}
+
+/// Points an item's asset references at the SD card. Internal assets are
+/// referenced by bare name, SD ones by full path.
+void _relinkToSd(Map<String, dynamic> json, Set<String> names) {
+  for (final key in ['asset', 'label']) {
+    if (names.contains(json[key])) json[key] = '$sdAssetDir/${json[key]}';
+  }
+  final bg = json['bg'];
+  if (bg is Map && names.contains(bg['asset'])) bg['asset'] = '$sdAssetDir/${bg['asset']}';
 }
 
 String _assetName(String prefix, Uint8List data, String ext) =>
@@ -138,47 +149,54 @@ Future<DeviceItem> toDevice(ContentItem item, int w, int h) async {
 }
 
 /// Converts and uploads a preset to slot [index], then starts playing it.
-/// Assets already on the device (same content hash) are skipped.
+/// Its images go to the SD card when [toSd], else to the internal flash.
+/// Assets already there (same content hash) are skipped.
 Future<void> sendPreset(
   DeviceLink link,
   int index,
   Preset preset, {
   required int width,
   required int height,
+  required bool toSd,
   required void Function(String step, double progress) onProgress,
 }) async {
+  final dir = toSd ? sdAssetDir : internalAssetDir;
   onProgress('変換中', 0);
   final items = <Map<String, dynamic>>[];
   final assets = <String, Uint8List>{};
   for (final item in preset.items) {
     final d = await toDevice(item, width, height);
+    if (toSd) _relinkToSd(d.json, d.assets.keys.toSet());
     items.add(d.json);
     assets.addAll(d.assets);
   }
 
-  final existing = <String>{
-    for (final f in (await link.command('list_files', {'dir': '/assets'}))['files'] as List) f['name'] as String,
-  };
+  final existing = {for (final f in await listDir(link, dir)) f.name};
   final toSend = assets.entries.where((e) => !existing.contains(e.key)).toList();
   final total = toSend.fold<int>(0, (s, e) => s + e.value.length);
   var done = 0;
   for (final e in toSend) {
     final base = done;
-    await link.uploadFile('/assets/${e.key}', e.value, onProgress: (f) {
+    await link.uploadFile('$dir/${e.key}', e.value, onProgress: (f) {
       onProgress('転送中 ${e.key}', total == 0 ? 1 : (base + f * e.value.length) / total);
     });
     done += e.value.length;
   }
 
   onProgress('プリセット保存', 1);
-  final presetJson = jsonEncode({'name': preset.name, 'transition': preset.transition, 'items': items});
+  final presetJson = jsonEncode({
+    'name': preset.name,
+    'transition': preset.transition,
+    if (preset.bgm != null) 'bgm': preset.bgm,
+    'items': items,
+  });
   await link.uploadFile('/presets/$index.json', Uint8List.fromList(utf8.encode(presetJson)));
   await link.command('reload', {'index': index});
   await link.command('preset', {'index': index});
   await _collectGarbage(link);
 }
 
-/// Deletes assets no stored preset references.
+/// Deletes assets (internal and on the SD card) no stored preset references.
 Future<void> _collectGarbage(DeviceLink link) async {
   final info = (await link.command('info'))['info'] as Map<String, dynamic>;
   final used = <String>{};
@@ -192,9 +210,12 @@ Future<void> _collectGarbage(DeviceLink link) async {
       if (bg is Map && bg['asset'] is String) used.add(bg['asset'] as String);
     }
   }
-  final files = (await link.command('list_files', {'dir': '/assets'}))['files'] as List;
-  for (final f in files) {
-    final name = f['name'] as String;
-    if (!used.contains(name)) await link.command('delete_file', {'path': '/assets/$name'});
+  for (final f in await listDir(link, internalAssetDir)) {
+    if (!used.contains(f.name)) await link.command('delete_file', {'path': f.path});
+  }
+  if (sdMounted(info)) {
+    for (final f in await listDir(link, sdAssetDir)) {
+      if (!used.contains(f.path)) await link.command('delete_file', {'path': f.path});
+    }
   }
 }

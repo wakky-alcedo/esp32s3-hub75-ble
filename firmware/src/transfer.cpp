@@ -16,7 +16,8 @@ uint32_t crc32Update(uint32_t crc, const uint8_t *data, size_t len) {
 }
 
 static bool allowedTarget(const String &p) {
-  return fsValidPath(p.c_str()) && (p.startsWith("/assets/") || p.startsWith("/presets/") || p.startsWith("/sd/")) &&
+  return fsValidPath(p.c_str()) && (p.startsWith("/assets/") || p.startsWith("/presets/") || p.startsWith("/music/") ||
+                                     p.startsWith("/sd/")) &&
          !p.endsWith(".tmp") && !p.endsWith("/");
 }
 
@@ -52,6 +53,9 @@ bool FileReceiver::begin(const char *path, uint32_t size, uint32_t crc, String &
     err = "open failed";
     return false;
   }
+  if (!buf_) buf_ = (uint8_t *)ps_malloc(BUF_SIZE);
+  bufLen_ = 0;
+  writeFailed_ = false;
   size_ = size;
   crc_ = crc;
   received_ = 0;
@@ -62,10 +66,27 @@ bool FileReceiver::begin(const char *path, uint32_t size, uint32_t crc, String &
 
 bool FileReceiver::write(uint32_t offset, const uint8_t *data, size_t len) {
   if (!active_ || offset != received_ || received_ + len > size_) return false;
-  if (file_.write(data, len) != len) return false;
   running_ = crc32Update(running_, data, len);
   received_ += len;
+  while (len) {
+    size_t n = buf_ ? min(len, BUF_SIZE - bufLen_) : 0;
+    if (!n) {  // no buffer: write straight through
+      writeFailed_ |= file_.write(data, len) != len;
+      break;
+    }
+    memcpy(buf_ + bufLen_, data, n);
+    bufLen_ += n;
+    data += n;
+    len -= n;
+    if (bufLen_ == BUF_SIZE) flush();
+  }
   return true;
+}
+
+bool FileReceiver::flush() {
+  if (bufLen_ && file_.write(buf_, bufLen_) != bufLen_) writeFailed_ = true;
+  bufLen_ = 0;
+  return !writeFailed_;
 }
 
 bool FileReceiver::end(String &err) {
@@ -73,8 +94,14 @@ bool FileReceiver::end(String &err) {
     err = "no transfer";
     return false;
   }
+  flush();
   file_.close();
   active_ = false;
+  if (writeFailed_) {
+    err = "write failed";
+    fs_->remove(local_ + ".tmp");
+    return false;
+  }
   if (received_ != size_) {
     err = "size mismatch";
     fs_->remove(local_ + ".tmp");

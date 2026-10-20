@@ -3,6 +3,7 @@
 #include "config.h"
 #include "display.h"
 #include "fsutil.h"
+#include "sound.h"
 #include "usb_console.h"
 
 Player gPlayer;
@@ -49,6 +50,7 @@ bool Player::selectPreset(int index, bool persist) {
   items_ = doc_["items"].as<JsonArrayConst>();
   fade_ = strcmp(doc_["transition"] | "fade", "cut") != 0;
   preset_ = index;
+  startBgm();
   startItem(0);
   phase_ = PLAYING;
   gDisplay.setFade(256);
@@ -58,6 +60,29 @@ bool Player::selectPreset(int index, bool persist) {
   }
   Console.printf("[player] preset %d (%s, %d items)\n", index, demo_ ? "demo" : "stored", items_.size());
   return true;
+}
+
+// A preset's "bgm" starts with it and loops; switching to a preset without
+// one stops it. Music started from the app keeps going in that case.
+void Player::startBgm() {
+  const char *bgm = doc_["bgm"] | "";
+  if (*bgm && !gDisplay.standby()) {
+    if (musicNowPlaying() != bgm) musicPlay(bgm, true);
+    bgmOwned_ = true;
+  } else if (bgmOwned_) {
+    musicStop();
+    bgmOwned_ = false;
+  }
+}
+
+void Player::setStandby(bool on) {
+  gDisplay.setStandby(on);
+  if (on) {
+    musicStop();
+    bgmOwned_ = false;
+  } else {
+    startBgm();
+  }
 }
 
 void Player::nextPreset() {
@@ -176,4 +201,6 @@ void Player::statusJson(JsonObject o) const {
   o["mA"] = gDisplay.estimatedMa();
   o["powerScale"] = gDisplay.powerScale();
   o["uptime"] = millis() / 1000;
+  String music = musicNowPlaying();
+  if (music.length()) o["music"] = music;
 }

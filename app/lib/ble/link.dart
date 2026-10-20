@@ -119,14 +119,17 @@ class DeviceLink {
     return resp;
   }
 
-  /// Uploads [data] to [path] on the device's flash.
-  Future<void> uploadFile(String path, Uint8List data, {void Function(double)? onProgress}) async {
+  /// Uploads [data] to [path] on the device (flash, or the SD card for
+  /// "/sd/..."). Stops with a DeviceError when [cancelled] turns true.
+  Future<void> uploadFile(String path, Uint8List data,
+      {void Function(double)? onProgress, bool Function()? cancelled}) async {
     await command('file_begin', {'path': path, 'size': data.length, 'crc': getCrc32(data)});
     final chunk = (mtu - 3 - 4).clamp(16, 240);
     const window = 24; // chunks between flow-control checks
     var offset = 0;
     try {
       while (offset < data.length) {
+        if (cancelled?.call() == true) throw DeviceError('中止しました');
         var sent = 0;
         var off = offset;
         while (off < data.length && sent < window) {

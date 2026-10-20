@@ -101,7 +101,7 @@ static void handleButton() {
   switch (ev) {
     case BTN_SHORT:
       if (gDisplay.standby()) {
-        gDisplay.setStandby(false);
+        gPlayer.setStandby(false);
         break;
       }
       gPlayer.nextPreset();
@@ -123,11 +123,11 @@ static void handleButton() {
       break;
     }
     case BTN_VERY_LONG:
-      gDisplay.setStandby(!gDisplay.standby());
+      gPlayer.setStandby(!gDisplay.standby());
       break;
     case BTN_HOLD_10S:
       // Reaching 10s passed through the 3s standby toggle; undo it.
-      gDisplay.setStandby(!gDisplay.standby());
+      gPlayer.setStandby(!gDisplay.standby());
       if (gClearBondsHook) gClearBondsHook();
       gPlayer.toast("UNPAIRED", 2000);
       break;

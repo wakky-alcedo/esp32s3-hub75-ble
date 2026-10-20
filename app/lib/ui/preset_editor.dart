@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../model/content.dart';
 import '../model/sender.dart';
+import '../model/storage.dart';
 import '../state/app_state.dart';
 import 'item_editor.dart';
 
@@ -67,6 +68,44 @@ class _PresetEditorState extends State<PresetEditor> {
     await _save();
   }
 
+  Future<void> _pickBgm() async {
+    final link = app.link;
+    if (link == null) return;
+    List<DeviceFile> files;
+    try {
+      files = await listMusic(link, app.info);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('読み込めません: $e')));
+      return;
+    }
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(shrinkWrap: true, children: [
+          ListTile(leading: const Icon(Icons.music_off), title: const Text('なし'), onTap: () => Navigator.pop(ctx, '')),
+          for (final f in files)
+            ListTile(
+              leading: Icon(f.onSd ? Icons.sd_card : Icons.memory),
+              title: Text(f.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text(formatBytes(f.size)),
+              selected: f.path == preset.bgm,
+              onTap: () => Navigator.pop(ctx, f.path),
+            ),
+          if (files.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('本体に音楽がありません。「ファイル」タブから追加してください'),
+            ),
+        ]),
+      ),
+    );
+    if (picked == null) return;
+    setState(() => preset.bgm = picked.isEmpty ? null : picked);
+    await _save();
+  }
+
   Future<void> _send() async {
     final link = app.link;
     if (link == null) return;
@@ -89,8 +128,12 @@ class _PresetEditorState extends State<PresetEditor> {
     String? error;
     final sw = Stopwatch()..start();
     try {
+      await app.refresh(); // picks up an SD card inserted since connecting
       await sendPreset(link, widget.index, preset,
-          width: app.width, height: app.height, onProgress: (s, f) => progress.value = (s, f));
+          width: app.width,
+          height: app.height,
+          toSd: app.useSd,
+          onProgress: (s, f) => progress.value = (s, f));
       await app.refresh();
     } catch (e) {
       error = '$e';
@@ -146,6 +189,18 @@ class _PresetEditorState extends State<PresetEditor> {
               setState(() => preset.transition = v ? 'fade' : 'cut');
               _save();
             },
+          ),
+          ListenableBuilder(
+            listenable: app,
+            builder: (_, _) => ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.music_note),
+              title: const Text('BGM（このプリセットの間ずっと流す）'),
+              subtitle: Text(preset.bgm == null ? 'なし' : preset.bgm!.split('/').last,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: app.connected ? _pickBgm : null,
+            ),
           ),
           const Divider(),
           ReorderableListView(

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'model/content.dart';
+import 'state/app_state.dart';
 import 'ui/home.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Library.instance.load();
+  await AppState.instance.loadPrefs();
   runApp(const LedApp());
 }
 

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 import '../ble/link.dart';
+import '../model/storage.dart';
 
 enum LinkState { idle, scanning, connecting, connected }
 
@@ -28,6 +29,25 @@ class AppState extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _evtSub;
   Timer? _scanTimer;
   bool _autoTried = false;
+
+  /// Upload destination setting, see storageLabels.
+  String storage = 'auto';
+
+  Future<void> loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    storage = prefs.getString('storage') ?? 'auto';
+  }
+
+  Future<void> setStorage(String v) async {
+    storage = v;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('storage', v);
+  }
+
+  /// Whether uploads go to the SD card now. Throws when the setting asks for
+  /// the card and none is inserted.
+  bool get useSd => resolveUseSd(storage, info);
 
   int get width => (info['width'] as int?) ?? 64;
   int get height => (info['height'] as int?) ?? 32;

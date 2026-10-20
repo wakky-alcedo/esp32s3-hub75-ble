@@ -58,7 +58,7 @@ bool fsExists(const char *path) {
 bool fsValidPath(const char *path) {
   if (!path || path[0] != '/') return false;
   if (strstr(path, "..")) return false;
-  if (strlen(path) > 96) return false;
+  if (strlen(path) > 160) return false;  // SD names; LittleFS itself allows 63
   return true;
 }
 

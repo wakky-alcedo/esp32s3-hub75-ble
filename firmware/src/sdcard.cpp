@@ -40,6 +40,7 @@ bool sdEnsure() {
 }
 
 void sdJson(JsonObject o) {
+  sdEnsure();  // picks up a card inserted since boot (retried at most every 5s)
   o["mounted"] = sdMounted();
   if (!sMounted) return;
   o["total"] = SD_MMC.totalBytes();

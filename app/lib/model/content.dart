@@ -156,20 +156,23 @@ class ContentItem {
 }
 
 class Preset {
-  Preset({this.name = '', this.transition = 'fade', List<ContentItem>? items}) : items = items ?? [];
+  Preset({this.name = '', this.transition = 'fade', this.bgm, List<ContentItem>? items}) : items = items ?? [];
 
   String name;
   String transition;
+  String? bgm; // device path of the music played while this preset runs
   List<ContentItem> items;
 
   Map<String, dynamic> toJson() => {
         'name': name,
         'transition': transition,
+        if (bgm != null) 'bgm': bgm,
         'items': items.map((e) => e.toJson()).toList(),
       };
   factory Preset.fromJson(Map<String, dynamic> j) => Preset(
         name: j['name'] as String? ?? '',
         transition: j['transition'] as String? ?? 'fade',
+        bgm: j['bgm'] as String?,
         items: (j['items'] as List? ?? []).map((e) => ContentItem.fromJson(Map<String, dynamic>.from(e))).toList(),
       );
 }
