@@ -186,6 +186,7 @@ class Library extends ChangeNotifier {
 
   final presets = List<Preset>.generate(presetSlots, (_) => Preset());
   late Directory _dir;
+  int _defaultsVersion = 0; // which defaultPresets have been put into empty slots
 
   Directory get mediaDir => Directory('${_dir.path}${Platform.pathSeparator}media');
   File get _file => File('${_dir.path}${Platform.pathSeparator}library.json');
@@ -193,22 +194,37 @@ class Library extends ChangeNotifier {
   Future<void> load() async {
     _dir = await getApplicationSupportDirectory();
     await mediaDir.create(recursive: true);
-    if (!await _file.exists()) return;
-    try {
-      final j = jsonDecode(await _file.readAsString()) as Map<String, dynamic>;
-      final list = j['presets'] as List;
-      for (var i = 0; i < presetSlots && i < list.length; i++) {
-        presets[i] = Preset.fromJson(Map<String, dynamic>.from(list[i]));
+    if (await _file.exists()) {
+      try {
+        final j = jsonDecode(await _file.readAsString()) as Map<String, dynamic>;
+        final list = j['presets'] as List;
+        for (var i = 0; i < presetSlots && i < list.length; i++) {
+          presets[i] = Preset.fromJson(Map<String, dynamic>.from(list[i]));
+        }
+        _defaultsVersion = j['defaults'] as int? ?? 0;
+      } catch (e) {
+        debugPrint('[library] load failed: $e');
       }
-    } catch (e) {
-      debugPrint('[library] load failed: $e');
+    }
+    // Fresh installs (and libraries from before the defaults existed) get the
+    // default presets in their slots, unless the user has put something there.
+    if (_defaultsVersion < defaultsVersion) {
+      for (final e in defaultPresets.entries) {
+        final p = presets[e.key];
+        if (p.items.isEmpty && p.name.isEmpty) presets[e.key] = presetTemplates[e.value]!();
+      }
+      _defaultsVersion = defaultsVersion;
+      await save();
     }
     notifyListeners();
   }
 
   Future<void> save() async {
     final tmp = File('${_file.path}.tmp');
-    await tmp.writeAsString(jsonEncode({'presets': presets.map((p) => p.toJson()).toList()}));
+    await tmp.writeAsString(jsonEncode({
+      'defaults': _defaultsVersion,
+      'presets': presets.map((p) => p.toJson()).toList(),
+    }));
     await tmp.rename(_file.path);
     notifyListeners();
   }
@@ -224,14 +240,31 @@ class Library extends ChangeNotifier {
   }
 }
 
-/// Ready-made presets for the on-board sensors.
+/// Ready-made presets: the classic effects, and the on-board sensors.
 final presetTemplates = <String, Preset Function()>{
+  'エフェクト': () => Preset(name: 'エフェクト', items: [
+        for (final e in ['plasma', 'fire', 'matrix', 'life', 'stars', 'noise', 'rainbow'])
+          ContentItem('effect', {'effect': e, 'duration': 15000}),
+      ]),
   'センサー値': () => Preset(name: 'センサー', items: [ContentItem('sensors', {})]),
   '音のビジュアライザー': () => Preset(name: '音', items: [
         ContentItem('effect', {'effect': 'spectrum', 'duration': 20000}),
         ContentItem('effect', {'effect': 'spectrum', 'params': {'style': 'mirror'}, 'duration': 20000}),
         ContentItem('effect', {'effect': 'radial', 'duration': 20000}),
         ContentItem('effect', {'effect': 'waterfall', 'duration': 20000}),
+      ]),
+  '音楽のビジュアライザー': () => Preset(name: '音楽', items: [
+        for (final p in [
+          {'effect': 'spectrum'},
+          {'effect': 'spectrum', 'style': 'mirror'},
+          {'effect': 'radial'},
+          {'effect': 'waterfall'},
+        ])
+          ContentItem('effect', {
+            'effect': p['effect'],
+            'params': {...p, 'source': 'music'}..remove('effect'),
+            'duration': 20000,
+          }),
       ]),
   '傾きアート': () => Preset(name: '傾き', items: [
         ContentItem('effect', {'effect': 'sand', 'duration': 30000}),
@@ -241,3 +274,9 @@ final presetTemplates = <String, Preset Function()>{
         ContentItem('effect', {'effect': 'bubbles', 'duration': 20000}),
       ]),
 };
+
+/// Template put into each slot (0-based) on first launch; the same presets
+/// the device was set up with. Bump defaultsVersion when adding one, so that
+/// existing installs pick it up (into empty slots only).
+const defaultPresets = {2: 'センサー値', 3: '音のビジュアライザー', 4: '傾きアート', 6: 'エフェクト'};
+const defaultsVersion = 1;
