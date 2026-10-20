@@ -48,7 +48,7 @@ struct Config {
   uint16_t speed = 100;  // percent, applies to motion only
   int16_t tzOffsetMin = 540;
   uint8_t volume = 60;  // speaker, 0-100 (0 = mute)
-  uint8_t imuRotation = 0;   // board orientation on the panel, quarter turns
+  uint8_t imuRotation = 3;   // board orientation on the panel, quarter turns (3 fits the stock mounting)
   int16_t tempOffset10 = 0;  // added to the SHTC3 temperature, 0.1 degC units
   uint8_t micGain = 24;      // ES7210 microphone gain, dB (0-37)
 

@@ -23,6 +23,11 @@ def enter_bootloader(source, target, env):
         s.dtr = False
         s.rts = False
         s.open()
+        # End any partial line first (e.g. esptool sync bytes from a failed
+        # attempt), or the command is parsed together with it and rejected.
+        s.write(b"\n")
+        time.sleep(0.1)
+        s.reset_input_buffer()
         s.write(json.dumps({"cmd": "bootloader"}).encode() + b"\n")
         reply = s.read(200)
         s.close()
