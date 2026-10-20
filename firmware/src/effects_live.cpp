@@ -61,6 +61,10 @@ static inline void addPixel(GFXcanvas16 &c, int x, int y, uint16_t col) {
 // Effect sounds can be turned off per item with "sound": false.
 static bool soundOn(JsonObjectConst p) { return p["sound"] | true; }
 
+// How hard the panel is being shaken: 0 when still or barely moved, 1 for a
+// vigorous shake by hand (measured: sensor shake ~0.05-0.2 g light, ~0.3 g hard).
+static float shakeAmount(const SensorData &s) { return constrain((s.shake - 0.05f) / 0.22f, 0.0f, 1.5f); }
+
 // Plays a motion effect's sound while the panel is being shaken, louder the
 // harder it shakes, at most once per `everyMs`.
 struct ShakeSound {
@@ -71,10 +75,10 @@ struct ShakeSound {
     sound = soundOn(p) ? s : SOUND_NONE;
     everyMs = every;
   }
-  void update(float shake, uint32_t dt, float from) {
+  void update(float amount, uint32_t dt) {
     wait = wait > dt ? wait - dt : 0;
-    if (sound == SOUND_NONE || shake < from || wait) return;
-    soundEffect(sound, (uint8_t)constrain(70 + (shake - from) * 250, 70.0f, 255.0f));
+    if (sound == SOUND_NONE || amount <= 0 || wait) return;
+    soundEffect(sound, (uint8_t)constrain(70 + amount * 185, 70.0f, 255.0f));
     wait = everyMs;
   }
 };
@@ -337,7 +341,7 @@ class GrainEffect : public Effect {
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
     SensorData s = sensorsGet();
-    shakeSound_.update(s.shake, dt, 0.5f);
+    shakeSound_.update(shakeAmount(s), dt);
     acc_ += dt;
     int steps = 0;
     while (acc_ >= 16 && steps < 4) {
@@ -379,7 +383,7 @@ class GrainEffect : public Effect {
       frame_ = 1;
     }
     // Shaking throws grains against gravity.
-    if (s.shake > 0.5f) splash(s);
+    if (shakeAmount(s) > 0.15f) splash(s);
     int dx, dy;
     if (!gravityDir(s, dx, dy)) return;
     // Visit the cells nearest the "floor" first so columns fall as a whole.
@@ -427,12 +431,13 @@ class GrainEffect : public Effect {
   void splash(const SensorData &s) {
     float m = sqrtf(s.gravX * s.gravX + s.gravY * s.gravY);
     float ux = m > 0.2f ? -s.gravX / m : 0, uy = m > 0.2f ? -s.gravY / m : -1;
-    int tries = (int)(w_ * h_ * min(1.0f, s.shake) / 30);
+    const float amount = shakeAmount(s);
+    int tries = (int)(w_ * h_ * min(1.0f, amount) / 30);
     for (int t = 0; t < tries; t++) {
       int i = rndInt(0, w_ * h_);
       if (!cell_[i]) continue;
       int x = i % w_, y = i / w_;
-      float d = frand(2, 2 + s.shake * h_ / 3);
+      float d = frand(2, 2 + amount * h_ / 3);
       int nx = x + (int)(ux * d + frand(-2, 2)), ny = y + (int)(uy * d + frand(-2, 2));
       if (free_(nx, ny)) move(i, nx, ny);
     }
@@ -461,11 +466,11 @@ class FlowEffect : public Effect {
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
     SensorData s = sensorsGet();
-    shakeSound_.update(s.shake, dt, 0.4f);
+    shakeSound_.update(shakeAmount(s), dt);
     const float fdt = min(dt, (uint32_t)50) / 1000.0f;
     t_ += dt;
     hue_ += dt * 0.01f;
-    const float G = 70, MAXV = 45;
+    const float G = 70, MAXV = 45, shake = shakeAmount(s);
     trail_.restore(c, 215);
     for (int i = 0; i < n_; i++) {
       Particle &q = p_[i];
@@ -473,9 +478,9 @@ class FlowEffect : public Effect {
       float a = ang * (2 * PI / 128);
       q.vx += (s.gravX * G + cosf(a) * 14) * fdt;
       q.vy += (s.gravY * G + sinf(a) * 14) * fdt;
-      if (s.shake > 0.4f) {
-        q.vx += frand(-1, 1) * s.shake * 60;
-        q.vy += frand(-1, 1) * s.shake * 60;
+      if (shake > 0) {
+        q.vx += frand(-1, 1) * shake * 60;
+        q.vy += frand(-1, 1) * shake * 60;
       }
       float damp = 1 - 0.9f * fdt;
       q.vx *= damp;
@@ -541,14 +546,14 @@ class MarblesEffect : public Effect {
 
  private:
   void physics(const SensorData &s, float dt) {
-    const float G = 160, E_WALL = 0.55f, E_BALL = 0.85f;
+    const float G = 160, E_WALL = 0.55f, E_BALL = 0.85f, shake = shakeAmount(s);
     for (int i = 0; i < n_; i++) {
       Ball &b = b_[i];
       b.vx += s.gravX * G * dt;
       b.vy += s.gravY * G * dt;
-      if (s.shake > 0.5f) {
-        b.vx += frand(-1, 1) * s.shake * 40;
-        b.vy += frand(-1, 1) * s.shake * 40;
+      if (shake > 0) {
+        b.vx += frand(-1, 1) * shake * 40;
+        b.vy += frand(-1, 1) * shake * 40;
       }
       // Rolling friction.
       b.vx *= 1 - 0.25f * dt;
@@ -614,13 +619,13 @@ class BubblesEffect : public Effect {
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
     SensorData s = sensorsGet();
-    shakeSound_.update(s.shake, dt, 0.4f);
+    shakeSound_.update(shakeAmount(s), dt);
     const float fdt = min(dt, (uint32_t)50) / 1000.0f;
     t_ += dt;
     float m = sqrtf(s.gravX * s.gravX + s.gravY * s.gravY);
     float ux = m > 0.2f ? -s.gravX / m : 0, uy = m > 0.2f ? -s.gravY / m : -1;  // "up"
 
-    spawnAcc_ += fdt * (4 + min(1.0f, s.shake) * 60);
+    spawnAcc_ += fdt * (4 + min(1.0f, shakeAmount(s)) * 60);
     while (spawnAcc_ >= 1) {
       spawnAcc_ -= 1;
       spawn(ux, uy);

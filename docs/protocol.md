@@ -45,7 +45,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | `file_end` / `file_abort` | | `file_end` でサイズと CRC を検証し、確定する |
 | `sync_time` | `epoch`(UTC 秒), `tzOffsetMin` | RTC にも書き込む |
 | `sound` | `name`: tick/beep/chime/alarm、効果音 clack/knock/rattle/splash/whoosh/fizz（既定 chime） | 試し鳴らし。音量は設定の `volume` |
-| `sensors` | | `sensors`: envOk, imuOk, tempC, humidity, chipC, acc[3](g), gyro[3](°/s), accRaw[3]（基板の軸） |
+| `sensors` | | `sensors`: envOk, imuOk, tempC, humidity, chipC, acc[3](g), gyro[3](°/s), accRaw[3]（基板の軸）, shake（揺れ、g）, shakePeak（前回の読み出しからの最大値） |
 | `imu_calibrate` | | パネルをいつもの向きに立てて送ると、今の重力の向きを「下」として `imuRotation` を保存する。寝かせていると失敗 |
 | `mic` | | `mic`: present, dbfs, level, bass, peakHz, beats, bands[64](0-99), bandDb[64] |
 | `snapshot` | | 直前に描いたフレーム。`w`, `h`, `data`(base64、RGB565 LE)。デバッグ用 |

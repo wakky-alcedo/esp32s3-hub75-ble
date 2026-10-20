@@ -22,6 +22,8 @@ static float sRaw[3];  // last accelerometer sample in board axes, for setup
 // Test override of gravity and shake (sensorsSimulate).
 static float sSim[4];
 static uint32_t sSimUntil = 0;
+// Strongest shake since the last sensorsJson(), to tune the effect thresholds.
+static float sShakePeak = 0;
 
 // --- I2C helpers -------------------------------------------------------------
 
@@ -183,6 +185,7 @@ static void sensorTask(void *) {
 
     portENTER_CRITICAL(&sMux);
     sData = d;
+    sShakePeak = max(sShakePeak, d.shake);
     if ((int32_t)(sSimUntil - now) > 0) {
       sData.gravX = sSim[0], sData.gravY = sSim[1], sData.gravZ = sSim[2], sData.shake = sSim[3];
     }
@@ -231,6 +234,10 @@ SensorData sensorsGet() {
 
 void sensorsJson(JsonObject o) {
   SensorData d = sensorsGet();
+  portENTER_CRITICAL(&sMux);
+  float peak = sShakePeak;
+  sShakePeak = 0;
+  portEXIT_CRITICAL(&sMux);
   o["envOk"] = d.envOk;
   o["imuOk"] = d.imuOk;
   o["tempC"] = roundf(d.tempC * 10) / 10;
@@ -242,4 +249,6 @@ void sensorsJson(JsonObject o) {
   for (float v : {d.gx, d.gy, d.gz}) gyr.add(roundf(v * 10) / 10);
   JsonArray raw = o["accRaw"].to<JsonArray>();
   for (float v : sRaw) raw.add(roundf(v * 100) / 100);
+  o["shake"] = roundf(d.shake * 100) / 100;
+  o["shakePeak"] = roundf(peak * 100) / 100;
 }
