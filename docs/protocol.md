@@ -44,7 +44,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | `file_status` | | `active`, `expected` |
 | `file_end` / `file_abort` | | `file_end` でサイズと CRC を検証し、確定する |
 | `sync_time` | `epoch`(UTC 秒), `tzOffsetMin` | RTC にも書き込む |
-| `sound` | `name`: tick/beep/chime/alarm（既定 chime） | 試し鳴らし。音量は設定の `volume` |
+| `sound` | `name`: tick/beep/chime/alarm、効果音 clack/knock/rattle/splash/whoosh/fizz（既定 chime） | 試し鳴らし。音量は設定の `volume` |
 | `sensors` | | `sensors`: envOk, imuOk, tempC, humidity, chipC, acc[3](g), gyro[3](°/s), accRaw[3]（基板の軸） |
 | `imu_calibrate` | | パネルをいつもの向きに立てて送ると、今の重力の向きを「下」として `imuRotation` を保存する。寝かせていると失敗 |
 | `mic` | | `mic`: present, dbfs, level, bass, peakHz, beats, bands[64](0-99), bandDb[64] |
@@ -90,7 +90,7 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 | `effect` | `effect`: plasma/fire/matrix/life/stars/noise/rainbow、音: spectrum/radial/waterfall、傾き: sand/liquid/flow/marbles/bubbles、`params` |
 | `sensors` | `pages`: env/accel/gyro/sound の配列（順に切り替え）、`pageMs`(既定 3000)、`color`、`headColor`。`duration` を省くと全ページを 1 回 |
 
-エフェクトのパラメータ：plasma `palette`、fire `cooling` `sparking`、matrix `color`、life `stepMs`、stars `count`、noise `palette` `scale`、rainbow `density`、spectrum `style`: bars/mirror、waterfall `palette`: heat/ocean、sand・liquid `fill`(%)、flow `count`、marbles `count`。
+エフェクトのパラメータ：plasma `palette`、fire `cooling` `sparking`、matrix `color`、life `stepMs`、stars `count`、noise `palette` `scale`、rainbow `density`、spectrum `style`: bars/mirror、waterfall `palette`: heat/ocean、sand・liquid `fill`(%)、flow `count`、marbles `count`。傾きの 5 つは `sound`（既定 true）で効果音（ビー玉は衝突、ほかは揺すったとき）。
 `asset` に `/sd/...` と書くと SD カードのファイルを使う（gif・image）。
 パレット名：rainbow, heat, lava, cloud, ocean, forest, party。
 

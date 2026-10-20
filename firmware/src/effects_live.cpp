@@ -4,6 +4,7 @@
 #include "effects.h"
 #include "mic.h"
 #include "sensors.h"
+#include "sound.h"
 
 static inline uint16_t crgb565(const CRGB &c) { return rgb565(c.r, c.g, c.b); }
 
@@ -56,6 +57,27 @@ static inline void addPixel(GFXcanvas16 &c, int x, int y, uint16_t col) {
   uint16_t *p = c.getBuffer() + y * c.width() + x;
   *p = add565(*p, col);
 }
+
+// Effect sounds can be turned off per item with "sound": false.
+static bool soundOn(JsonObjectConst p) { return p["sound"] | true; }
+
+// Plays a motion effect's sound while the panel is being shaken, louder the
+// harder it shakes, at most once per `everyMs`.
+struct ShakeSound {
+  Sound sound = SOUND_NONE;
+  uint16_t everyMs = 200;
+  uint32_t wait = 0;
+  void set(JsonObjectConst p, Sound s, uint16_t every) {
+    sound = soundOn(p) ? s : SOUND_NONE;
+    everyMs = every;
+  }
+  void update(float shake, uint32_t dt, float from) {
+    wait = wait > dt ? wait - dt : 0;
+    if (sound == SOUND_NONE || shake < from || wait) return;
+    soundEffect(sound, (uint8_t)constrain(70 + (shake - from) * 250, 70.0f, 255.0f));
+    wait = everyMs;
+  }
+};
 
 // ===========================================================================
 // Audio
@@ -304,6 +326,7 @@ class GrainEffect : public Effect {
     Effect::begin(w, h, p);
     cell_ = (uint8_t *)calloc(w * h, 1);
     stamp_ = (uint8_t *)calloc(w * h, 1);
+    shakeSound_.set(p, liquid_ ? SOUND_SPLASH : SOUND_RATTLE, liquid_ ? 260 : 150);
     float fill = constrain((float)(p["fill"] | (liquid_ ? 50 : 40)), 5.0f, 90.0f) / 100;
     int rows = (int)(h * fill);
     for (int y = h - rows; y < h; y++)
@@ -314,6 +337,7 @@ class GrainEffect : public Effect {
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
     SensorData s = sensorsGet();
+    shakeSound_.update(s.shake, dt, 0.5f);
     acc_ += dt;
     int steps = 0;
     while (acc_ >= 16 && steps < 4) {
@@ -419,6 +443,7 @@ class GrainEffect : public Effect {
   uint8_t *stamp_ = nullptr;  // frame a cell last moved in
   uint8_t frame_ = 0;
   uint32_t acc_ = 0, t_ = 0;
+  ShakeSound shakeSound_;
 };
 
 // Glowing particles streaming downhill and wrapping around the edges, stirred
@@ -432,9 +457,11 @@ class FlowEffect : public Effect {
     p_ = (Particle *)calloc(n_, sizeof(Particle));
     for (int i = 0; i < n_; i++) p_[i] = {frand(0, w), frand(0, h), 0, 0, (uint8_t)rndInt(0, 64)};
     trail_.init(w, h);
+    shakeSound_.set(p, SOUND_WHOOSH, 320);
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
     SensorData s = sensorsGet();
+    shakeSound_.update(s.shake, dt, 0.4f);
     const float fdt = min(dt, (uint32_t)50) / 1000.0f;
     t_ += dt;
     hue_ += dt * 0.01f;
@@ -478,9 +505,11 @@ class FlowEffect : public Effect {
   Trail trail_;
   uint32_t t_ = 0;
   float hue_ = 140;
+  ShakeSound shakeSound_;
 };
 
-// Shiny balls rolling with the tilt, bouncing off the walls and each other.
+// Shiny balls rolling with the tilt, bouncing off the walls and each other,
+// clicking when they hit something.
 class MarblesEffect : public Effect {
  public:
   void begin(int w, int h, JsonObjectConst p) override {
@@ -491,11 +520,14 @@ class MarblesEffect : public Effect {
       b_[i] = {frand(r_, w - r_), frand(r_, h - r_), frand(-20, 20), frand(-20, 20), (uint8_t)(i * 256 / n_)};
     }
     trail_.init(w, h);
+    sound_ = soundOn(p);
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
     SensorData s = sensorsGet();
     const float fdt = min(dt, (uint32_t)50) / 1000.0f;
+    hitBall_ = hitWall_ = 0;
     for (int sub = 0; sub < 3; sub++) physics(s, fdt / 3);
+    clicks(dt);
     trail_.restore(c, 120);
     for (int i = 0; i < n_; i++) {
       Ball &b = b_[i];
@@ -523,10 +555,10 @@ class MarblesEffect : public Effect {
       b.vy *= 1 - 0.25f * dt;
       b.x += b.vx * dt;
       b.y += b.vy * dt;
-      if (b.x < r_) b.x = r_, b.vx = fabsf(b.vx) * E_WALL;
-      if (b.x > w_ - 1 - r_) b.x = w_ - 1 - r_, b.vx = -fabsf(b.vx) * E_WALL;
-      if (b.y < r_) b.y = r_, b.vy = fabsf(b.vy) * E_WALL;
-      if (b.y > h_ - 1 - r_) b.y = h_ - 1 - r_, b.vy = -fabsf(b.vy) * E_WALL;
+      if (b.x < r_) wall(-b.vx), b.x = r_, b.vx = fabsf(b.vx) * E_WALL;
+      if (b.x > w_ - 1 - r_) wall(b.vx), b.x = w_ - 1 - r_, b.vx = -fabsf(b.vx) * E_WALL;
+      if (b.y < r_) wall(-b.vy), b.y = r_, b.vy = fabsf(b.vy) * E_WALL;
+      if (b.y > h_ - 1 - r_) wall(b.vy), b.y = h_ - 1 - r_, b.vy = -fabsf(b.vy) * E_WALL;
     }
     for (int i = 0; i < n_; i++)
       for (int j = i + 1; j < n_; j++) {
@@ -538,10 +570,25 @@ class MarblesEffect : public Effect {
         b.x += nx * push, b.y += ny * push;
         float rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
         if (rel >= 0) continue;
+        hitBall_ = max(hitBall_, -rel);
         float imp = -(1 + E_BALL) * rel / 2;
         a.vx -= imp * nx, a.vy -= imp * ny;
         b.vx += imp * nx, b.vy += imp * ny;
       }
+  }
+
+  void wall(float speed) { hitWall_ = max(hitWall_, speed); }
+
+  // The hardest hit of the frame makes the sound. Below MIN_HIT are the
+  // little bounces of balls resting on the floor or against each other.
+  void clicks(uint32_t dt) {
+    static const float MIN_HIT = 14;
+    wait_ = wait_ > dt ? wait_ - dt : 0;
+    if (!sound_ || wait_) return;
+    float v = max(hitBall_, hitWall_);
+    if (v < MIN_HIT) return;
+    soundEffect(hitBall_ >= hitWall_ ? SOUND_CLACK : SOUND_KNOCK, (uint8_t)constrain(40 + v * 2.2f, 0.0f, 255.0f));
+    wait_ = 35;  // about one click long
   }
 
   struct Ball {
@@ -553,14 +600,21 @@ class MarblesEffect : public Effect {
   int n_ = 0;
   float r_ = 3;
   Trail trail_;
+  bool sound_ = true;
+  float hitBall_ = 0, hitWall_ = 0;  // strongest impact speeds this frame
+  uint32_t wait_ = 0;
 };
 
 // Bubbles rising against gravity through dark water; shaking fizzes.
 class BubblesEffect : public Effect {
  public:
-  void begin(int w, int h, JsonObjectConst p) override { Effect::begin(w, h, p); }
+  void begin(int w, int h, JsonObjectConst p) override {
+    Effect::begin(w, h, p);
+    shakeSound_.set(p, SOUND_FIZZ, 220);
+  }
   void render(GFXcanvas16 &c, uint32_t dt) override {
     SensorData s = sensorsGet();
+    shakeSound_.update(s.shake, dt, 0.4f);
     const float fdt = min(dt, (uint32_t)50) / 1000.0f;
     t_ += dt;
     float m = sqrtf(s.gravX * s.gravX + s.gravY * s.gravY);
@@ -626,6 +680,7 @@ class BubblesEffect : public Effect {
   Bubble b_[MAX] = {};
   float spawnAcc_ = 0;
   uint32_t t_ = 0;
+  ShakeSound shakeSound_;
 };
 
 // ---------------------------------------------------------------------------

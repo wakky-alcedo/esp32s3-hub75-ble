@@ -487,6 +487,14 @@ class _ItemEditorState extends State<ItemEditor> {
           child: Text('本体のマイクで拾った音に合わせて動きます', style: TextStyle(fontSize: 12)),
         ),
       if (motionEffects.contains(effect))
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('効果音'),
+          subtitle: Text(effect == 'marbles' ? 'ぶつかったときに鳴ります' : '揺すったときに鳴ります'),
+          value: params['sound'] as bool? ?? true,
+          onChanged: (v) => setParam('sound', v),
+        ),
+      if (motionEffects.contains(effect))
         const Padding(
           padding: EdgeInsets.only(top: 8),
           child: Text('本体の傾きと揺れに合わせて動きます。向きが合わないときは「設定 → センサー」で合わせてください',

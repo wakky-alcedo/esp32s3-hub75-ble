@@ -113,11 +113,119 @@ static void playTones(const Tone *tones, size_t n) {
   }
 }
 
+// --- Effect sounds ---------------------------------------------------------
+
+static uint32_t sRng = 0x9E3779B9u;
+
+static inline float noise() {  // -1..1
+  sRng ^= sRng << 13;
+  sRng ^= sRng >> 17;
+  sRng ^= sRng << 5;
+  return (int32_t)sRng * (1.0f / 2147483648.0f);
+}
+
+static inline float urand() { return noise() * 0.5f + 0.5f; }
+
+// Streams `frames` samples from `sample(i)` to the codec.
+template <typename F>
+static void render(uint32_t frames, F sample) {
+  static const int FRAMES = 256;
+  int16_t buf[FRAMES * 2];
+  for (uint32_t done = 0; done < frames;) {
+    int count = min<uint32_t>(FRAMES, frames - done);
+    for (int i = 0; i < count; i++, done++) {
+      int32_t s = constrain((int32_t)sample(done), -32767, 32767);
+      buf[i * 2] = buf[i * 2 + 1] = s;
+    }
+    size_t written;
+    i2s_write(PORT, buf, count * 4, &written, portMAX_DELAY);
+  }
+}
+
+// A struck hard object: two decaying partials (the upper one dies faster)
+// and a little noise for the contact. Pitch varies a bit between hits.
+static void playClick(float amp, float f1, float f2, float tauMs, float noiseMix) {
+  const float detune = 1 + noise() * 0.08f;
+  const float w1 = 2 * PI * f1 * detune / RATE, w2 = 2 * PI * f2 * detune / RATE;
+  const float decay = expf(-1000.0f / (RATE * tauMs));
+  const uint32_t total = RATE * tauMs * 6 / 1000, attack = RATE / 2000;  // 0.5ms
+  float env = 1, p1 = 0, p2 = 0;
+  render(total, [&](uint32_t i) {
+    float v = sinf(p1) + 0.5f * env * sinf(p2) + noiseMix * env * env * noise();
+    v *= env * (i < attack ? (float)i / attack : 1.0f);
+    env *= decay;
+    p1 += w1;
+    p2 += w2;
+    if (p1 > 2 * PI) p1 -= 2 * PI;
+    if (p2 > 2 * PI) p2 -= 2 * PI;
+    return v * amp * 0.7f;
+  });
+}
+
+struct NoiseSpec {
+  uint16_t ms, attackMs;
+  float lp;       // one-pole low-pass coefficient: higher is brighter
+  float hp;       // coefficient of the low-pass whose output is removed (0 = none)
+  float grains;   // grain onsets per ms; 0 = continuous noise
+  float grainMs;  // grain decay time
+  uint8_t drops;  // rising water-drop blips sprinkled in
+  float gain;     // brings the filtered noise back to about full scale
+};
+
+static const NoiseSpec RATTLE = {170, 2, 0.6f, 0.10f, 5.0f, 0.5f, 0, 2.9f};
+static const NoiseSpec SPLASH = {300, 30, 0.07f, 0.010f, 0, 0, 3, 4.8f};
+static const NoiseSpec WHOOSH = {340, 140, 0.10f, 0.020f, 0, 0, 0, 4.2f};
+static const NoiseSpec FIZZ = {240, 4, 0.75f, 0.30f, 1.6f, 0.2f, 0, 4.8f};
+
+static void playNoise(const NoiseSpec &n, float amp) {
+  const uint32_t total = RATE * n.ms / 1000, attack = RATE * n.attackMs / 1000 + 1;
+  const float pGrain = n.grains * 1000 / RATE;
+  const float gDecay = n.grainMs > 0 ? expf(-1000.0f / (RATE * n.grainMs)) : 0;
+  const uint32_t DROP = RATE * 45 / 1000;
+  struct Drop {
+    uint32_t at;
+    float f, phase, env;
+  } drops[4];
+  const int nDrops = min<int>(n.drops, 4);
+  for (int d = 0; d < nDrops; d++) drops[d] = {(uint32_t)(urand() * total * 0.6f), 700 + urand() * 900, 0, 1};
+  const float dropDecay = expf(-1000.0f / (RATE * 10));
+  float g = 0, lp = 0, lo = 0;
+  render(total, [&](uint32_t i) {
+    float x;
+    if (n.grains > 0) {
+      if (urand() < pGrain) g = 0.3f + 0.7f * urand();
+      x = noise() * g;
+      g *= gDecay;
+    } else {
+      x = noise();
+    }
+    lp += n.lp * (x - lp);
+    lo += n.hp * (lp - lo);
+    float v = (n.hp > 0 ? lp - lo : lp) * n.gain;
+    for (int d = 0; d < nDrops; d++) {
+      Drop &dr = drops[d];
+      if (i < dr.at || i >= dr.at + DROP) continue;
+      float t = (float)(i - dr.at) / DROP;
+      dr.phase += 2 * PI * dr.f * (1 + t * 1.5f) / RATE;  // pitch glides up
+      v += sinf(dr.phase) * dr.env * 0.6f;
+      dr.env *= dropDecay;
+    }
+    float r = i < attack ? 1.0f : 1 - (float)(i - attack) / (total - attack);
+    float env = i < attack ? (float)i / attack : r * r;
+    return v * env * amp;
+  });
+}
+
+struct Request {
+  Sound s;
+  uint8_t level;
+};
+
 static void soundTask(void *) {
   bool paOn = false;
   for (;;) {
-    Sound s;
-    if (xQueueReceive(sQueue, &s, paOn ? pdMS_TO_TICKS(PA_HOLD_MS) : portMAX_DELAY) != pdTRUE) {
+    Request req;
+    if (xQueueReceive(sQueue, &req, paOn ? pdMS_TO_TICKS(PA_HOLD_MS) : portMAX_DELAY) != pdTRUE) {
       digitalWrite(PIN_PA_ENABLE, LOW);
       paOn = false;
       continue;
@@ -128,11 +236,18 @@ static void soundTask(void *) {
       static const Tone SETTLE[] = {{0, 30}};  // let the amplifier come up
       playTones(SETTLE, 1);
     }
-    switch (s) {
+    const float amp = amplitude() * req.level / 255.0f;
+    switch (req.s) {
       case SOUND_TICK: playTones(TICK, sizeof(TICK) / sizeof(Tone)); break;
       case SOUND_BEEP: playTones(BEEP, sizeof(BEEP) / sizeof(Tone)); break;
       case SOUND_CHIME: playTones(CHIME, sizeof(CHIME) / sizeof(Tone)); break;
       case SOUND_ALARM: playTones(ALARM, sizeof(ALARM) / sizeof(Tone)); break;
+      case SOUND_CLACK: playClick(amp, 3300, 5200, 6, 0.3f); break;
+      case SOUND_KNOCK: playClick(amp, 900, 2100, 8, 0.6f); break;
+      case SOUND_RATTLE: playNoise(RATTLE, amp); break;
+      case SOUND_SPLASH: playNoise(SPLASH, amp); break;
+      case SOUND_WHOOSH: playNoise(WHOOSH, amp); break;
+      case SOUND_FIZZ: playNoise(FIZZ, amp); break;
       default: break;
     }
   }
@@ -178,7 +293,7 @@ bool soundBegin() {
     i2s_driver_uninstall(PORT);
     return false;
   }
-  sQueue = xQueueCreate(4, sizeof(Sound));
+  sQueue = xQueueCreate(4, sizeof(Request));
   xTaskCreatePinnedToCore(soundTask, "sound", 4096, nullptr, 3, nullptr, 0);
   sPresent = true;
   Console.println("[sound] ES8311 ready");
@@ -189,7 +304,15 @@ bool soundPresent() { return sPresent; }
 
 void soundPlay(Sound s) {
   if (!sPresent || s == SOUND_NONE || gConfig.volume == 0) return;
-  xQueueSend(sQueue, &s, 0);
+  Request req = {s, 255};
+  xQueueSend(sQueue, &req, 0);
+}
+
+void soundEffect(Sound s, uint8_t level) {
+  if (!sPresent || s == SOUND_NONE || gConfig.volume == 0 || !level) return;
+  if (uxQueueMessagesWaiting(sQueue)) return;
+  Request req = {s, level};
+  xQueueSend(sQueue, &req, 0);
 }
 
 Sound soundFromName(const char *name) {
@@ -198,5 +321,11 @@ Sound soundFromName(const char *name) {
   if (!strcmp(name, "beep")) return SOUND_BEEP;
   if (!strcmp(name, "chime")) return SOUND_CHIME;
   if (!strcmp(name, "alarm")) return SOUND_ALARM;
+  if (!strcmp(name, "clack")) return SOUND_CLACK;
+  if (!strcmp(name, "knock")) return SOUND_KNOCK;
+  if (!strcmp(name, "rattle")) return SOUND_RATTLE;
+  if (!strcmp(name, "splash")) return SOUND_SPLASH;
+  if (!strcmp(name, "whoosh")) return SOUND_WHOOSH;
+  if (!strcmp(name, "fizz")) return SOUND_FIZZ;
   return SOUND_NONE;
 }
