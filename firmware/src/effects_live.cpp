@@ -65,6 +65,15 @@ static bool soundOn(JsonObjectConst p) { return p["sound"] | true; }
 // vigorous shake by hand (measured: sensor shake ~0.05-0.2 g light, ~0.3 g hard).
 static float shakeAmount(const SensorData &s) { return constrain((s.shake - 0.05f) / 0.22f, 0.0f, 1.5f); }
 
+// What a loose object on the panel feels, in g: gravity plus the push the
+// opposite way whenever the panel is jerked (the unfiltered reading minus the
+// smoothed gravity). Exaggerated a little so a shake by hand shows.
+static void feltForce(const SensorData &s, float &fx, float &fy) {
+  const float K = 1.5f;
+  fx = s.gravX + (s.ax - s.gravX) * K;
+  fy = s.gravY + (s.ay - s.gravY) * K;
+}
+
 // Plays a motion effect's sound while the panel is being shaken, louder the
 // harder it shakes, at most once per `everyMs`.
 struct ShakeSound {
@@ -77,8 +86,8 @@ struct ShakeSound {
   }
   void update(float amount, uint32_t dt) {
     wait = wait > dt ? wait - dt : 0;
-    if (sound == SOUND_NONE || amount <= 0 || wait) return;
-    soundEffect(sound, (uint8_t)constrain(70 + amount * 185, 70.0f, 255.0f));
+    if (sound == SOUND_NONE || amount < 0.1f || wait) return;
+    soundEffect(sound, (uint8_t)constrain(50 + amount * 170, 50.0f, 255.0f));
     wait = everyMs;
   }
 };
@@ -383,7 +392,7 @@ class GrainEffect : public Effect {
       frame_ = 1;
     }
     // Shaking throws grains against gravity.
-    if (shakeAmount(s) > 0.15f) splash(s);
+    if (shakeAmount(s) > 0.25f) splash(s);
     int dx, dy;
     if (!gravityDir(s, dx, dy)) return;
     // Visit the cells nearest the "floor" first so columns fall as a whole.
@@ -432,12 +441,12 @@ class GrainEffect : public Effect {
     float m = sqrtf(s.gravX * s.gravX + s.gravY * s.gravY);
     float ux = m > 0.2f ? -s.gravX / m : 0, uy = m > 0.2f ? -s.gravY / m : -1;
     const float amount = shakeAmount(s);
-    int tries = (int)(w_ * h_ * min(1.0f, amount) / 30);
+    int tries = (int)(w_ * h_ * min(1.0f, amount) / 120);
     for (int t = 0; t < tries; t++) {
       int i = rndInt(0, w_ * h_);
       if (!cell_[i]) continue;
       int x = i % w_, y = i / w_;
-      float d = frand(2, 2 + amount * h_ / 3);
+      float d = frand(1, 1 + amount * h_ / 5);
       int nx = x + (int)(ux * d + frand(-2, 2)), ny = y + (int)(uy * d + frand(-2, 2));
       if (free_(nx, ny)) move(i, nx, ny);
     }
@@ -470,18 +479,16 @@ class FlowEffect : public Effect {
     const float fdt = min(dt, (uint32_t)50) / 1000.0f;
     t_ += dt;
     hue_ += dt * 0.01f;
-    const float G = 70, MAXV = 45, shake = shakeAmount(s);
+    const float G = 70, MAXV = 45;
+    float fx, fy;
+    feltForce(s, fx, fy);
     trail_.restore(c, 215);
     for (int i = 0; i < n_; i++) {
       Particle &q = p_[i];
       uint8_t ang = inoise8((uint16_t)(q.x * 18), (uint16_t)(q.y * 18), t_ / 4);
       float a = ang * (2 * PI / 128);
-      q.vx += (s.gravX * G + cosf(a) * 14) * fdt;
-      q.vy += (s.gravY * G + sinf(a) * 14) * fdt;
-      if (shake > 0) {
-        q.vx += frand(-1, 1) * shake * 60;
-        q.vy += frand(-1, 1) * shake * 60;
-      }
+      q.vx += (fx * G + cosf(a) * 14) * fdt;
+      q.vy += (fy * G + sinf(a) * 14) * fdt;
       float damp = 1 - 0.9f * fdt;
       q.vx *= damp;
       q.vy *= damp;
@@ -546,15 +553,13 @@ class MarblesEffect : public Effect {
 
  private:
   void physics(const SensorData &s, float dt) {
-    const float G = 160, E_WALL = 0.55f, E_BALL = 0.85f, shake = shakeAmount(s);
+    const float G = 160, E_WALL = 0.55f, E_BALL = 0.85f;
+    float fx, fy;
+    feltForce(s, fx, fy);
     for (int i = 0; i < n_; i++) {
       Ball &b = b_[i];
-      b.vx += s.gravX * G * dt;
-      b.vy += s.gravY * G * dt;
-      if (shake > 0) {
-        b.vx += frand(-1, 1) * shake * 40;
-        b.vy += frand(-1, 1) * shake * 40;
-      }
+      b.vx += fx * G * dt;
+      b.vy += fy * G * dt;
       // Rolling friction.
       b.vx *= 1 - 0.25f * dt;
       b.vy *= 1 - 0.25f * dt;

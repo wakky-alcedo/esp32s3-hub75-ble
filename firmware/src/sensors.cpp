@@ -187,7 +187,8 @@ static void sensorTask(void *) {
     sData = d;
     sShakePeak = max(sShakePeak, d.shake);
     if ((int32_t)(sSimUntil - now) > 0) {
-      sData.gravX = sSim[0], sData.gravY = sSim[1], sData.gravZ = sSim[2], sData.shake = sSim[3];
+      sData.gravX = sData.ax = sSim[0], sData.gravY = sData.ay = sSim[1], sData.gravZ = sData.az = sSim[2];
+      sData.shake = sSim[3];
     }
     portEXIT_CRITICAL(&sMux);
     vTaskDelay(pdMS_TO_TICKS(IMU_PERIOD_MS));
