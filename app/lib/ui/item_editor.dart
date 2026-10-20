@@ -481,11 +481,22 @@ class _ItemEditorState extends State<ItemEditor> {
         IntSlider(label: '粒の数', value: params['count'] as int? ?? (widget.width * widget.height ~/ 12), min: 16, max: 600, onChanged: (v) => setParam('count', v)),
       if (effect == 'marbles')
         IntSlider(label: '玉の数', value: params['count'] as int? ?? 8, min: 1, max: 24, onChanged: (v) => setParam('count', v)),
-      if (micEffects.contains(effect))
-        const Padding(
-          padding: EdgeInsets.only(top: 8),
-          child: Text('本体のマイクで拾った音に合わせて動きます', style: TextStyle(fontSize: 12)),
+      if (micEffects.contains(effect)) ...[
+        ChoiceField(
+          label: '音の入力',
+          value: params['source'] as String? ?? 'mic',
+          options: const {'mic': 'マイク（周りの音）', 'music': '本体で流している音楽'},
+          onChanged: (v) => setParam('source', v),
         ),
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+              params['source'] == 'music'
+                  ? '本体で再生中の音楽（BGMなど）に合わせて動きます。音量を0にしても動きます'
+                  : '本体のマイクで拾った音に合わせて動きます',
+              style: const TextStyle(fontSize: 12)),
+        ),
+      ],
       if (motionEffects.contains(effect))
         SwitchListTile(
           contentPadding: EdgeInsets.zero,

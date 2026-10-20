@@ -21,10 +21,20 @@ static inline uint32_t rnd() {
 static inline int rndInt(int lo, int hi) { return lo + (int)(rnd() % (uint32_t)(hi - lo)); }
 static inline float frand(float lo, float hi) { return lo + (hi - lo) * ((rnd() >> 8) * (1.0f / 16777216)); }
 
-// Keeps the microphone analysis running while an effect is on screen.
+// Keeps the audio analysis running while an effect is on screen. Its input is
+// the microphones, or with "source": "music" the music being played.
 struct MicUser {
-  MicUser() { micAcquire(); }
-  ~MicUser() { micRelease(); }
+  MicSource src = MIC_SRC_MIC;
+  bool held = false;
+  void hold(JsonObjectConst p) {
+    src = !strcmp(p["source"] | "mic", "music") ? MIC_SRC_MUSIC : MIC_SRC_MIC;
+    micAcquire(src);
+    held = true;
+  }
+  ~MicUser() {
+    if (held) micRelease(src);
+  }
+  MicFrame get() const { return micGet(src); }
 };
 
 // Frame buffer kept between frames, for trails.
@@ -125,6 +135,7 @@ class SpectrumEffect : public Effect {
  public:
   void begin(int w, int h, JsonObjectConst p) override {
     Effect::begin(w, h, p);
+    mic_.hold(p);
     mirror_ = !strcmp(p["style"] | "bars", "mirror");
     barW_ = w >= 96 ? 3 : 2;
     gap_ = w >= 40 ? 1 : 0;
@@ -132,7 +143,7 @@ class SpectrumEffect : public Effect {
     x0_ = (w - (bars_.n * (barW_ + gap_) - gap_)) / 2;
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
-    MicFrame f = micGet();
+    MicFrame f = mic_.get();
     bars_.update(f, dt);
     hue_ += dt * 0.02f;
     if (f.beats != beats_) {
@@ -192,11 +203,12 @@ class RadialEffect : public Effect {
  public:
   void begin(int w, int h, JsonObjectConst p) override {
     Effect::begin(w, h, p);
+    mic_.hold(p);
     trail_.init(w, h);
     bars_.n = 24;
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
-    MicFrame f = micGet();
+    MicFrame f = mic_.get();
     bars_.update(f, dt);
     const float fdt = dt / 1000.0f;
     hue_ += dt * 0.03f;
@@ -278,11 +290,12 @@ class WaterfallEffect : public Effect {
  public:
   void begin(int w, int h, JsonObjectConst p) override {
     Effect::begin(w, h, p);
+    mic_.hold(p);
     palette_ = !strcmp(p["palette"] | "heat", "ocean") ? OceanColors_p : HeatColors_p;
     trail_.init(w, h);
   }
   void render(GFXcanvas16 &c, uint32_t dt) override {
-    MicFrame f = micGet();
+    MicFrame f = mic_.get();
     if (f.seq != seq_) {
       seq_ = f.seq;
       // One column per two analysis blocks: ~23px/s.

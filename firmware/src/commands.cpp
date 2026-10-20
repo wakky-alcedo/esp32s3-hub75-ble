@@ -57,7 +57,7 @@ void handleCommand(JsonObjectConst req, JsonDocument &resp) {
   } else if (!strcmp(cmd, "sensors")) {
     sensorsJson(resp["sensors"].to<JsonObject>());
   } else if (!strcmp(cmd, "mic")) {
-    micJson(resp["mic"].to<JsonObject>());
+    micJson(resp["mic"].to<JsonObject>(), !strcmp(req["source"] | "mic", "music") ? MIC_SRC_MUSIC : MIC_SRC_MIC);
   } else if (!strcmp(cmd, "mic_sim")) {
     micSimulate(req["ms"] | 10000u);
   } else if (!strcmp(cmd, "sensors_sim")) {

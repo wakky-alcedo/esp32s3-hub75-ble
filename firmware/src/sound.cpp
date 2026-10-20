@@ -3,6 +3,7 @@
 #include <driver/i2s.h>
 #include "config.h"
 #include "fsutil.h"
+#include "mic.h"
 #include "music.h"
 #include "usb_console.h"
 
@@ -242,6 +243,7 @@ static bool playMusicSlice(MusicDecoder &dec) {
   int16_t buf[FRAMES * 2];
   size_t n = dec.read(buf, FRAMES);
   if (!n) return false;
+  micFeedMusic(buf, n);  // for the visualizers, at full level whatever the volume
   // Mixed to mono for the single speaker, at the same loudness scale as the tones.
   const int32_t amp = amplitude();
   for (size_t i = 0; i < n; i++) {

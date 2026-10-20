@@ -1,6 +1,7 @@
 #include "mic.h"
 #include <Wire.h>
 #include <driver/i2s.h>
+#include <freertos/stream_buffer.h>
 #include <new>
 #include "config.h"
 #include "sound.h"
@@ -14,9 +15,10 @@ static const int HOP = 1024;  // new samples per analysis: 21ms
 static const float F_LO = 50, F_HI = 16000;
 
 static bool sPresent = false;
-static volatile int sUsers = 0;
+static volatile int sUsers[MIC_SOURCES] = {};
 static portMUX_TYPE sMux = portMUX_INITIALIZER_UNLOCKED;
-static MicFrame sFrame;
+static MicFrame sFrame[MIC_SOURCES];
+static StreamBufferHandle_t sMusicIn = nullptr;  // sound task -> analysis
 static uint32_t sSimUntil = 0;  // micSimulate()
 
 // Made-up music: a few wandering peaks over a bass line beating at 120bpm.
@@ -129,18 +131,24 @@ static bool codecInit() {
 
 // --- Analysis ----------------------------------------------------------------
 
-struct Analyzer {
-  float re[N], im[N];
-  float window[N];
+// What the analysis remembers about one source between blocks.
+struct SourceState {
   float history[N];          // last N mono samples
   float floor[MIC_BANDS];    // per-band noise floor, dB
   float smooth[MIC_BANDS];   // band power, smoothed
   bool primed = false;
-  float cosT[N / 2], sinT[N / 2];
-  uint16_t lo[MIC_BANDS], hi[MIC_BANDS];  // FFT bin range per band
-  float ref = -60;                        // auto-gain reference, dB
+  float ref = -60;           // auto-gain reference, dB
   float bassAvg = 0;
   uint32_t lastBeatMs = 0;
+  MicFrame frame;
+};
+
+// FFT workspace and tables, shared by the sources.
+struct Analyzer {
+  float re[N], im[N];
+  float window[N];
+  float cosT[N / 2], sinT[N / 2];
+  uint16_t lo[MIC_BANDS], hi[MIC_BANDS];  // FFT bin range per band
 
   void init() {
     for (int i = 0; i < N; i++) window[i] = 0.5f - 0.5f * cosf(2 * PI * i / (N - 1));
@@ -183,7 +191,12 @@ struct Analyzer {
     }
   }
 
-  void run(const int16_t *stereo, MicFrame &f) {
+  void run(const int16_t *stereo, SourceState &st) {
+    float *history = st.history, *floor = st.floor, *smooth = st.smooth;
+    float &ref = st.ref, &bassAvg = st.bassAvg;
+    uint32_t &lastBeatMs = st.lastBeatMs;
+    bool &primed = st.primed;
+    MicFrame &f = st.frame;
     memmove(history, history + HOP, sizeof(float) * (N - HOP));
     double sumSq = 0;
     for (int i = 0; i < HOP; i++) {
@@ -257,28 +270,58 @@ struct Analyzer {
   }
 };
 
+static void publish(MicSource src, const SourceState &st) {
+  portENTER_CRITICAL(&sMux);
+  sFrame[src] = st.frame;
+  portEXIT_CRITICAL(&sMux);
+}
+
 static void micTask(void *) {
   Analyzer *an = (Analyzer *)heap_caps_malloc(sizeof(Analyzer), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  // The music's state lives in PSRAM; it is only touched once per block.
+  SourceState *mic = (SourceState *)heap_caps_malloc(sizeof(SourceState), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  SourceState *music = (SourceState *)heap_caps_malloc(sizeof(SourceState), MALLOC_CAP_SPIRAM);
   int16_t *buf = (int16_t *)heap_caps_malloc(HOP * 4, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (!an || !buf) {
+  int16_t *musicBuf = (int16_t *)heap_caps_calloc(HOP, 4, MALLOC_CAP_SPIRAM);
+  if (!an || !mic || !music || !buf || !musicBuf) {
     Console.println("[mic] out of memory");
     vTaskDelete(nullptr);
   }
   new (an) Analyzer();
+  new (mic) SourceState();
+  new (music) SourceState();
   an->init();
-  MicFrame f;
+  size_t musicFill = 0;  // bytes of musicBuf filled
   for (;;) {
-    if (sUsers <= 0) {
+    const bool wantMic = sUsers[MIC_SRC_MIC] > 0, wantMusic = sUsers[MIC_SRC_MUSIC] > 0;
+    if (!wantMic && !wantMusic) {
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
-    size_t got = 0;
-    i2s_read(PORT, buf, HOP * 4, &got, pdMS_TO_TICKS(200));
-    if (got != (size_t)HOP * 4) continue;
-    an->run(buf, f);
-    portENTER_CRITICAL(&sMux);
-    sFrame = f;
-    portEXIT_CRITICAL(&sMux);
+    if (wantMic) {
+      size_t got = 0;
+      i2s_read(PORT, buf, HOP * 4, &got, pdMS_TO_TICKS(200));
+      if (got == (size_t)HOP * 4) {
+        an->run(buf, *mic);
+        publish(MIC_SRC_MIC, *mic);
+      }
+    }
+    if (wantMusic) {
+      // Blocks only when the microphones are not pacing the loop already.
+      const TickType_t wait = wantMic ? 0 : pdMS_TO_TICKS(30);
+      musicFill += xStreamBufferReceive(sMusicIn, (uint8_t *)musicBuf + musicFill, HOP * 4 - musicFill, wait);
+      if (musicFill == (size_t)HOP * 4) {
+        an->run(musicBuf, *music);
+        publish(MIC_SRC_MUSIC, *music);
+        musicFill = 0;
+      } else if (!musicPlaying()) {
+        // Nothing playing: analyse silence so the display settles to dark.
+        memset(musicBuf, 0, HOP * 4);
+        musicFill = 0;
+        an->run(musicBuf, *music);
+        publish(MIC_SRC_MUSIC, *music);
+      }
+    }
   }
 }
 
@@ -295,6 +338,7 @@ bool micBegin() {
     Console.println("[mic] ES7210 init failed");
     return false;
   }
+  sMusicIn = xStreamBufferCreate(HOP * 4 * 2, 1);
   xTaskCreatePinnedToCore(micTask, "mic", 4096, nullptr, 2, nullptr, 0);
   sPresent = true;
   Console.println("[mic] ES7210 ready");
@@ -310,41 +354,46 @@ void micApplyGain() {
   updateReg(0x44, 0x0F, g);
 }
 
-void micAcquire() {
+void micAcquire(MicSource src) {
   portENTER_CRITICAL(&sMux);
-  sUsers++;
+  sUsers[src]++;
   portEXIT_CRITICAL(&sMux);
 }
 
-void micRelease() {
+void micRelease(MicSource src) {
   portENTER_CRITICAL(&sMux);
-  if (sUsers > 0) sUsers--;
+  if (sUsers[src] > 0) sUsers[src]--;
   portEXIT_CRITICAL(&sMux);
 }
 
-MicFrame micGet() {
+MicFrame micGet(MicSource src) {
   MicFrame f;
   if ((int32_t)(sSimUntil - millis()) > 0) {
     simulate(f);
     return f;
   }
   portENTER_CRITICAL(&sMux);
-  f = sFrame;
+  f = sFrame[src];
   portEXIT_CRITICAL(&sMux);
   return f;
 }
 
+void micFeedMusic(const int16_t *stereo, size_t frames) {
+  if (!sMusicIn || sUsers[MIC_SRC_MUSIC] <= 0) return;
+  xStreamBufferSend(sMusicIn, stereo, frames * 4, 0);  // drops what does not fit
+}
+
 void micSimulate(uint32_t ms) { sSimUntil = millis() + ms; }
 
-void micJson(JsonObject o) {
+void micJson(JsonObject o, MicSource src) {
   // Briefly listens when nobody else is, so the command always has data.
-  bool idle = sUsers == 0;
+  bool idle = sUsers[src] == 0;
   if (idle) {
-    micAcquire();
+    micAcquire(src);
     delay(150);
   }
-  MicFrame f = micGet();
-  if (idle) micRelease();
+  MicFrame f = micGet(src);
+  if (idle) micRelease(src);
   o["present"] = sPresent;
   o["dbfs"] = roundf(f.dbfs * 10) / 10;
   o["level"] = roundf(f.level * 100) / 100;

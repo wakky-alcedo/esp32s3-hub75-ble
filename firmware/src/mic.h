@@ -3,8 +3,9 @@
 #include <ArduinoJson.h>
 
 // On-board microphones: ES7210 ADC on the speaker's I2S port (full duplex).
-// While at least one user holds the microphone, a background task runs an
-// FFT over the input and publishes a log-spaced spectrum.
+// While at least one user holds a source, a background task runs an FFT over
+// its input and publishes a log-spaced spectrum. Besides the microphones the
+// source can be the music being played (fed in by the sound task).
 
 static const int MIC_BANDS = 64;
 
@@ -21,15 +22,20 @@ struct MicFrame {
   uint32_t seq = 0;    // increments with every analysed block
 };
 
+enum MicSource : uint8_t { MIC_SRC_MIC, MIC_SRC_MUSIC, MIC_SOURCES };
+
 // Call after soundBegin(), which installs the shared I2S driver.
 bool micBegin();
 bool micPresent();
 // Re-applies gConfig.micGain.
 void micApplyGain();
 // Reference counted; the analysis runs only while someone holds it.
-void micAcquire();
-void micRelease();
-MicFrame micGet();
-void micJson(JsonObject o);
+void micAcquire(MicSource src = MIC_SRC_MIC);
+void micRelease(MicSource src = MIC_SRC_MIC);
+MicFrame micGet(MicSource src = MIC_SRC_MIC);
+// Decoded music, 48kHz interleaved stereo, before the volume is applied.
+// Dropped unless someone holds MIC_SRC_MUSIC.
+void micFeedMusic(const int16_t *stereo, size_t frames);
+void micJson(JsonObject o, MicSource src = MIC_SRC_MIC);
 // Replaces the input with synthetic music for ms, for testing the effects.
 void micSimulate(uint32_t ms);
