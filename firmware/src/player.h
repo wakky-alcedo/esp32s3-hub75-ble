@@ -5,7 +5,8 @@
 
 static const int MAX_PRESETS = 8;
 
-// Plays the items of the selected preset in order, looping forever.
+// Plays the items of the selected preset in order, looping forever unless
+// the preset has "loop": false.
 // Not thread safe: callers hold StateLock.
 class Player {
  public:
@@ -43,6 +44,7 @@ class Player {
   int index_ = 0;
   int pendingIndex_ = 0;
   bool fade_ = true;
+  bool loop_ = true;
   bool bgmOwned_ = false;  // the music playing is this preset's bgm
   bool paused_ = false;
   bool demo_ = false;

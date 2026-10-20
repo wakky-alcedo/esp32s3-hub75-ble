@@ -187,6 +187,7 @@ Future<void> sendPreset(
   final presetJson = jsonEncode({
     'name': preset.name,
     'transition': preset.transition,
+    if (!preset.loop) 'loop': false,
     if (preset.bgm != null) 'bgm': preset.bgm,
     'items': items,
   });

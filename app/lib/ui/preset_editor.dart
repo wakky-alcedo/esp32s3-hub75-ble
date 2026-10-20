@@ -60,6 +60,7 @@ class _PresetEditorState extends State<PresetEditor> {
     final t = presetTemplates[name]!();
     setState(() {
       preset.items = t.items;
+      preset.loop = t.loop;
       if (preset.name.isEmpty) {
         preset.name = t.name;
         _nameRev++;
@@ -187,6 +188,16 @@ class _PresetEditorState extends State<PresetEditor> {
             value: preset.transition == 'fade',
             onChanged: (v) {
               setState(() => preset.transition = v ? 'fade' : 'cut');
+              _save();
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('最後まで行ったら最初に戻る'),
+            subtitle: const Text('オフにすると最後の項目のまま止まる（タイマーなど）'),
+            value: preset.loop,
+            onChanged: (v) {
+              setState(() => preset.loop = v);
               _save();
             },
           ),

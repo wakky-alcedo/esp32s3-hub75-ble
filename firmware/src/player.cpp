@@ -49,6 +49,7 @@ bool Player::selectPreset(int index, bool persist) {
   }
   items_ = doc_["items"].as<JsonArrayConst>();
   fade_ = strcmp(doc_["transition"] | "fade", "cut") != 0;
+  loop_ = doc_["loop"] | true;
   preset_ = index;
   startBgm();
   startItem(0);
@@ -146,7 +147,8 @@ void Player::render(GFXcanvas16 &c, uint32_t dtMs) {
   switch (phase_) {
     case PLAYING:
       gDisplay.setFade(256);
-      if (item_ && item_->done()) {
+      // "loop": false stays on the last item, e.g. a timer showing 00:00.
+      if (item_ && item_->done() && (loop_ || index_ + 1 < (int)items_.size())) {
         if (fade_) {
           pendingIndex_ = index_ + 1;
           phase_ = FADING_OUT;

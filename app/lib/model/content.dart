@@ -156,22 +156,26 @@ class ContentItem {
 }
 
 class Preset {
-  Preset({this.name = '', this.transition = 'fade', this.bgm, List<ContentItem>? items}) : items = items ?? [];
+  Preset({this.name = '', this.transition = 'fade', this.loop = true, this.bgm, List<ContentItem>? items})
+      : items = items ?? [];
 
   String name;
   String transition;
+  bool loop; // false = stay on the last item when done
   String? bgm; // device path of the music played while this preset runs
   List<ContentItem> items;
 
   Map<String, dynamic> toJson() => {
         'name': name,
         'transition': transition,
+        if (!loop) 'loop': false,
         if (bgm != null) 'bgm': bgm,
         'items': items.map((e) => e.toJson()).toList(),
       };
   factory Preset.fromJson(Map<String, dynamic> j) => Preset(
         name: j['name'] as String? ?? '',
         transition: j['transition'] as String? ?? 'fade',
+        loop: j['loop'] as bool? ?? true,
         bgm: j['bgm'] as String?,
         items: (j['items'] as List? ?? []).map((e) => ContentItem.fromJson(Map<String, dynamic>.from(e))).toList(),
       );
@@ -209,9 +213,17 @@ class Library extends ChangeNotifier {
     // Fresh installs (and libraries from before the defaults existed) get the
     // default presets in their slots, unless the user has put something there.
     if (_defaultsVersion < defaultsVersion) {
-      for (final e in defaultPresets.entries) {
-        final p = presets[e.key];
-        if (p.items.isEmpty && p.name.isEmpty) presets[e.key] = presetTemplates[e.value]!();
+      if (_defaultsVersion == 1) {
+        // Version 1 put the defaults in slots 3, 4, 5 and 7. Version 2 packs
+        // them from slot 1 and drops the other slots (test presets back then).
+        final kept = [for (final i in [2, 3, 4, 6]) presets[i]];
+        for (var i = 0; i < presetSlots; i++) {
+          presets[i] = i < kept.length ? kept[i] : Preset();
+        }
+      }
+      for (var i = 0; i < defaultPresets.length; i++) {
+        final p = presets[i];
+        if (p.items.isEmpty && p.name.isEmpty) presets[i] = presetTemplates[defaultPresets[i]]!();
       }
       _defaultsVersion = defaultsVersion;
       await save();
@@ -240,7 +252,7 @@ class Library extends ChangeNotifier {
   }
 }
 
-/// Ready-made presets: the classic effects, and the on-board sensors.
+/// Ready-made presets: the classic effects, the on-board sensors, a timer and a clock.
 final presetTemplates = <String, Preset Function()>{
   'エフェクト': () => Preset(name: 'エフェクト', items: [
         for (final e in ['plasma', 'fire', 'matrix', 'life', 'stars', 'noise', 'rainbow'])
@@ -266,6 +278,10 @@ final presetTemplates = <String, Preset Function()>{
             'duration': 20000,
           }),
       ]),
+  'カップ麺タイマー': () => Preset(name: 'カップ麺', loop: false, items: [
+        ContentItem('countdown', {'mode': 'timer', 'seconds': 180, 'label': 'カップ麺', 'tickFrom': 3, 'duration': 0}),
+      ]),
+  '時計': () => Preset(name: '時計', loop: false, items: [ContentItem('clock', {'duration': 60000})]),
   '傾きアート': () => Preset(name: '傾き', items: [
         ContentItem('effect', {'effect': 'sand', 'duration': 30000}),
         ContentItem('effect', {'effect': 'liquid', 'duration': 30000}),
@@ -275,8 +291,8 @@ final presetTemplates = <String, Preset Function()>{
       ]),
 };
 
-/// Template put into each slot (0-based) on first launch; the same presets
-/// the device was set up with. Bump defaultsVersion when adding one, so that
+/// Templates put into slots 1, 2, ... on first launch; the same presets the
+/// device was set up with. Bump defaultsVersion when adding one, so that
 /// existing installs pick it up (into empty slots only).
-const defaultPresets = {2: 'センサー値', 3: '音のビジュアライザー', 4: '傾きアート', 6: 'エフェクト'};
-const defaultsVersion = 1;
+const defaultPresets = ['センサー値', '音のビジュアライザー', '傾きアート', 'エフェクト', 'カップ麺タイマー', '時計'];
+const defaultsVersion = 2;

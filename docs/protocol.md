@@ -78,8 +78,10 @@ Service `6e4c0001-7b3a-4f2e-9a61-4c45442d4453`
 
 ### プリセット（`/presets/N.json`）
 ```json
-{"name": "...", "transition": "fade|cut", "bgm": "/sd/music/x.mp3", "items": [ ... ]}
+{"name": "...", "transition": "fade|cut", "loop": true, "bgm": "/sd/music/x.mp3", "items": [ ... ]}
 ```
+`loop`（既定 true）を false にすると、最後の項目が終わってもそのまま表示し続ける（タイマーを 00:00 で止めておく、など）。
+
 項目の共通フィールド：`type`、`duration`(ms、省略時は種別ごとの既定値または自然終了)、`bg`（`{"type":"color","color":"#000000"}` / `{"type":"effect","effect":"stars","params":{}}` / `{"type":"image","asset":"x.ldb"}`）
 
 | type | フィールド |
